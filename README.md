@@ -1,6 +1,8 @@
 # MLOps Platform
 
-이 저장소는 MLflow, Airflow, KubeRay, Taxi 예제를 한 번에 묶은 MLOps 데모입니다.
+**MLflow, Apache Airflow, KubeRay**를 기반으로 MLOps 플랫폼을 구성하고,
+NYC Yellow Taxi 데이터셋을 활용하여 데이터 수집부터 전처리, 학습, 모델 등록, 서빙까지
+End-to-End 머신러닝 파이프라인을 구현한 프로젝트입니다.
 
 ## 구성
 
