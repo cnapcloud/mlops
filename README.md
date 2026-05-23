@@ -1,8 +1,18 @@
 # MLOps Platform
 
-**MLflow, Apache Airflow, KubeRay**를 기반으로 MLOps 플랫폼을 구성하고,
-NYC Yellow Taxi 데이터셋을 활용하여 데이터 수집부터 전처리, 학습, 모델 등록, 서빙까지
-End-to-End 머신러닝 파이프라인을 구현한 프로젝트입니다.
+이 저장소는 MLflow, Apache Airflow, KubeRay를 기반으로 MLOps 플랫폼을 구성하고,
+각 컴포넌트를 활용하기 위한 예제를 함께 제공합니다.
+
+NYC Yellow Taxi 데이터셋을 활용하여 데이터 수집부터 전처리, 학습, 모델 등록, 서빙까지의
+End-to-End 머신러닝 파이프라인을 구현하였습니다.
+
+본 파이프라인은 로컬 실행과 Airflow 기반 실행 두 가지 방식으로 제공됩니다.
+
+로컬 환경에서는 각 단계를 직접 실행할 수 있도록 구성되어 있으며,
+Airflow 환경에서는 KubernetesPodOperator를 통해 모든 Task를 컨테이너 기반으로 오케스트레이션합니다.
+
+학습 단계는 KubeRay와 연동하여 분산 학습 환경에서 수행되며,
+학습된 모델은 MLflow에 저장 및 관리됩니다.
 
 ## 구성
 
