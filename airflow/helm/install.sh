@@ -20,5 +20,7 @@ fi
 helm upgrade --install airflow apache-airflow/airflow \
   --namespace mlops \
   --create-namespace \
-  --version 3.2.0 \
+  --version 1.21.0 \
   --values values.yaml \
+
+kubectl -n mlops apply -f airflow-ray-role.yaml
