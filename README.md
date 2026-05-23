@@ -1,7 +1,6 @@
 # MLOps Platform
 
 이 저장소는 MLflow, Airflow, KubeRay, Taxi 예제를 한 번에 묶은 MLOps 데모입니다.
-처음 보는 사용자가 각 구성요소를 빠르게 이해하고 바로 실행해보는 것을 목표로 합니다.
 
 ## 구성
 
