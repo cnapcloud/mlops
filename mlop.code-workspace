@@ -1,0 +1,20 @@
+{
+	"folders": [
+		{
+			"path": "kuberay"
+		},
+		{
+			"path": "taxi"
+		},
+		{
+			"path": "mlflow"
+		},
+		{
+			"path": "airflow"
+		},
+		{
+			"path": "."
+		}
+	],
+	"settings": {}
+}

@@ -1,0 +1,25 @@
+apiVersion: v1
+kind: Pod
+metadata:
+  name: lora-pipeline-pod
+  namespace: mlops
+spec:
+  containers:
+    - name: base
+#      image: pytorch/pytorch:2.2.1-cuda12.1-cudnn8-runtime # 기본 PyTorch GPU 이미지
+      image: python:3.12-slim-bookworm
+      imagePullPolicy: IfNotPresent
+      resources:
+        requests:
+          memory: 100m
+          cpu: 100m
+        limits:
+          memory: 1Gi
+          cpu: 1
+      volumeMounts:
+        - name: model-data-storage
+          mountPath: /workspace/data # 데이터와 모델 가중치가 유지될 공유 볼륨
+  volumes:
+    - name: model-data-storage
+      persistentVolumeClaim:
+        claimName: lora-data-pvc # 쿠버네티스에 미리 생성된 PVC 이름

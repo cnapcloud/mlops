@@ -1,0 +1,64 @@
+{
+  "models": [
+    {
+      "target": "fare_amount",
+      "challenger_version": "1",
+      "unit": "$",
+      "challenger_metrics": {
+        "rmse": 4.3202,
+        "mae": 1.9405,
+        "r2": 0.9352,
+        "mape_pct": 17.67,
+        "p90_abs_error": 3.7156,
+        "unit": "$"
+      },
+      "champion_metrics": {
+        "rmse": 4.3202,
+        "mae": 1.9405,
+        "r2": 0.9352,
+        "mape_pct": 17.67,
+        "p90_abs_error": 3.7156,
+        "unit": "$"
+      },
+      "comparison": {
+        "champion_rmse": 4.3202,
+        "challenger_rmse": 4.3202,
+        "improvement_pct": 0.0,
+        "threshold_pct": 0.0,
+        "promote_challenger": true,
+        "decision": "PROMOTE (identical RMSE)"
+      }
+    },
+    {
+      "target": "trip_duration_min",
+      "challenger_version": "1",
+      "unit": "min",
+      "challenger_metrics": {
+        "rmse": 5.1627,
+        "mae": 3.0835,
+        "r2": 0.811,
+        "mape_pct": 29.38,
+        "p90_abs_error": 6.7014,
+        "unit": "min"
+      },
+      "champion_metrics": {
+        "rmse": 5.1627,
+        "mae": 3.0835,
+        "r2": 0.811,
+        "mape_pct": 29.38,
+        "p90_abs_error": 6.7014,
+        "unit": "min"
+      },
+      "comparison": {
+        "champion_rmse": 5.1627,
+        "challenger_rmse": 5.1627,
+        "improvement_pct": 0.0,
+        "threshold_pct": 0.0,
+        "promote_challenger": true,
+        "decision": "PROMOTE (identical RMSE)"
+      }
+    }
+  ],
+  "rejected_targets": [],
+  "overall_promote": true
+}
