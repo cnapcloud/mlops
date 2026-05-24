@@ -26,16 +26,16 @@ spec:
 
         containers:
           - name: ray-head
-            image: rayproject/ray:2.55.1-py312-cpu-aarch64
+            image: cnapcloud/ray-llm:2.55.1-py312-cpu-aarch64
             imagePullPolicy: Always
 
             resources:
               requests:
                 cpu: 200m
-                memory: 2Gi
+                memory: 6Gi
               limits:
                 cpu: "2"
-                memory: 4G
+                memory: 6Gi
 
             volumeMounts:
               - name: ray-shared-storage
@@ -58,7 +58,7 @@ spec:
                 name: metrics
 
   workerGroupSpecs:
-    - replicas: 2
+    - replicas: 1
       minReplicas: 1
       maxReplicas: 3
       groupName: worker-group
@@ -96,16 +96,16 @@ spec:
 
           containers:
             - name: ray-worker
-              image: rayproject/ray:2.55.1-py312-cpu-aarch64
+              image: cnapcloud/ray-llm:2.55.1-py312-cpu-aarch64
               imagePullPolicy: Always
 
               resources:
                 requests:
-                  cpu: 100m
-                  memory: 2Gi
+                  cpu: "6"
+                  memory: 14Gi
                 limits:
-                  cpu: "2"
-                  memory: 6G
+                  cpu: "6"
+                  memory: 14Gi
 
               volumeMounts:
                 - name: ray-shared-storage

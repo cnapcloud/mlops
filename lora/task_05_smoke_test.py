@@ -67,7 +67,7 @@ def run(eval_result: dict) -> dict:
         log.info("Smoke Test 대상: %s v%s (Staging)", model_name, staging_version)
 
         # ── 2. 모델 로드 ─────────────────────────────────────────────
-        model, tokenizer = _load_model(HF_TOKEN, MODEL_ID)
+        model, tokenizer = _load_model_from_mlflow(MLFLOW_MODEL_NAME, HF_TOKEN, MODEL_ID)
 
         # ── 3. 각 프롬프트 테스트 ────────────────────────────────────
         test_results = []
@@ -100,7 +100,7 @@ def run(eval_result: dict) -> dict:
 
         # ── 4. 최종 판정 및 승격 ─────────────────────────────────────
         if all_passed:
-            _transition(client, model_name, staging_version, "Production")
+            # _transition(client, model_name, staging_version, "Production")
             decision = (
                 f"전체 {len(SMOKE_TEST_PROMPTS)}건 테스트 통과 "
                 f"→ v{staging_version} Production 승격"
@@ -132,25 +132,34 @@ def run(eval_result: dict) -> dict:
 # 내부 함수
 # ─────────────────────────────────────────────
 
-def _load_model(hf_token: str, model_id: str):
+def _load_model_from_mlflow(model_name: str, hf_token: str, model_id: str):
     """
-    추론용 모델 및 토크나이저 로드.
-    실제 환경: mlflow.pyfunc.load_model("models:/llm-finetune/Staging")
-    데모 환경: HuggingFace 직접 로드
+    MLflow Registry에서 Staging 단계의 모델과 토크나이저를 로드합니다.
     """
-    import torch
-    from transformers import AutoModelForCausalLM, AutoTokenizer
+    import mlflow.transformers
+    from transformers import AutoTokenizer
 
-    log.info("추론 모델 로드 중: %s", model_id)
-    tokenizer = AutoTokenizer.from_pretrained(model_id, use_auth_token=hf_token)
+    # 1. MLflow Model Registry URI 정의 (models:/모델명/단계)
+    model_uri = f"models:/{model_name}/Staging"
+    log.info("MLflow Model Registry에서 모델 다운로드 중: %s", model_uri)
+
+    # 2. MLflow에 저장된 트랜스포머 파이프라인/모델 객체 로드
+    # (일반적으로 MLflow에 log_model할 때 모델과 토크나이저가 함께 패키징됩니다)
+    components = mlflow.transformers.load_model(model_uri, model_config={"device": "mps"})
+    
+    # 만약 MLflow에 pipeline 형태로 저장했다면 dictionary 구조로 반환됩니다.
+    if isinstance(components, dict):
+        model = components.get("model")
+        tokenizer = components.get("tokenizer")
+    else:
+        # 파이프라인 자체인 경우 원본 모델 추출
+        model = components.model
+        tokenizer = components.tokenizer
+
     tokenizer.pad_token = tokenizer.eos_token
-
-    model = AutoModelForCausalLM.from_pretrained(
-        model_id,
-        dtype=torch.float32,
-    )
     model.eval()
-    log.info("모델 로드 완료")
+    
+    log.info("MLflow 모델 및 토크나이저 로드 완료")
     return model, tokenizer
 
 
@@ -175,6 +184,13 @@ def _run_single_test(
 
     try:
         inputs      = tokenizer(prompt, return_tensors="pt", truncation=True, max_length=256)
+        
+        # ── 💡 [수정] 이 부분이 핵심입니다! ──────────────────────────────
+        # 입력 데이터(input_ids, attention_mask 등)를 모델이 있는 model.device 장치로 강제 이동시킵니다.
+        inputs      = {k: v.to(model.device) for k, v in inputs.items()}
+        # ─────────────────────────────────────────────────────────────
+
+        # input_len을 구할 때도 똑같이 사용 가능합니다.
         input_len   = inputs["input_ids"].shape[1]
 
         start = time.time()
@@ -213,7 +229,8 @@ def _run_single_test(
 
     except Exception as e:
         result["fail_reason"] = f"추론 예외 발생: {e}"
-        result["latency_sec"] = round(time.time() - (time.time() - result.get("latency_sec", 0)), 3)
+        # 예외 발생 시 에러 시간 보정 부분 가독성 개선
+        result["latency_sec"] = round(time.time() - start, 3) if 'start' in locals() else 0.0
 
     return result
 

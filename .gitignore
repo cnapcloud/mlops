@@ -177,3 +177,6 @@ cython_debug/
 
 # lora output
 lora_out/
+**/lora_output
+**/artifacts/
+**/reports/
