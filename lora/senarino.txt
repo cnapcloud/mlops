@@ -1,0 +1,55 @@
+
+Task 1. Data Analysis
+
+100건 샘플 데이터 로드
+텍스트 길이 분포, null 비율, 중복 비율 계산
+기본 통계 리포트 출력 (평균 토큰 수, 최대/최소 등)
+결과를 analysis_report.json으로 저장
+
+Task 2. Data Validation
+
+Task 1 리포트를 읽어서 품질 기준 검사
+
+null 비율 < 5%
+중복 비율 < 10%
+최소 샘플 수 충족 여부
+
+
+통과 시 → Task 3 진행
+실패 시 → 파이프라인 중단, 사유 출력
+
+Task 3. Train (KubeRay + MLflow)
+
+KubeRay로 분산 학습 실행 (기존 코드 기반)
+학습 완료 후 MLflow에 모델 등록
+
+mlflow.log_metrics() : loss, epoch
+mlflow.register_model() : 모델명 llm-finetune
+등록된 버전은 초기 None 상태 (stage 미지정)
+
+
+반환값 : 새로 등록된 MLflow run_id, model_version
+
+Task 4. Evaluate & Stage 비교
+
+평가 데이터셋으로 신규 모델 vs 현재 Staging 모델 성능 비교
+
+평가 지표: Loss, Perplexity (간단한 데모 기준)
+
+
+신규 모델이 나으면 → MLflow에서 신규 버전을 Staging으로 승격, 기존 Staging은 Archived
+나쁘면 → 파이프라인 중단, 기존 Staging 유지
+최초 실행 (비교 대상 없음) → 무조건 Staging 승격
+
+Task 5. Smoke Test → Production 승격
+
+Staging 모델을 로드해서 샘플 입력 3~5건으로 추론 실행
+체크 항목:
+
+추론 응답 시간 < 임계값
+출력 토큰 수 > 0 (빈 응답 아님)
+예외 없이 정상 완료
+
+
+전부 통과 → MLflow에서 Staging → Production 승격
+실패 시 → Production 유지, 경고 출력
