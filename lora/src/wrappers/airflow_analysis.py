@@ -1,4 +1,4 @@
-"""Airflow wrapper for evaluation."""
+"""Airflow wrapper for data analysis."""
 
 from __future__ import annotations
 
@@ -6,12 +6,12 @@ import json
 from pathlib import Path
 
 from common.mlflow_utils import extract_metadata
-from training.evaluate import run
+from data.analysis import run
 
 
-def execute(train_result: dict | None = None) -> dict:
-    result = run(train_result)
-    metadata = extract_metadata(result, ["status", "promoted", "new_version", "decision"])
+def execute() -> dict:
+    result = run()
+    metadata = extract_metadata(result, ["status", "report_path"])
     _write_xcom(metadata)
     return metadata
 
@@ -21,9 +21,9 @@ def _write_xcom(payload: dict) -> None:
     xcom_path.parent.mkdir(parents=True, exist_ok=True)
     xcom_path.write_text(json.dumps(payload), encoding="utf-8")
 
+
 def main() -> None:
     execute()
-
 
 if __name__ == "__main__":
     main()

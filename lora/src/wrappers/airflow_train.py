@@ -20,3 +20,11 @@ def _write_xcom(payload: dict) -> None:
     xcom_path = Path("/airflow/xcom/return.json")
     xcom_path.parent.mkdir(parents=True, exist_ok=True)
     xcom_path.write_text(json.dumps(payload), encoding="utf-8")
+
+
+def main() -> None:
+    execute()
+
+
+if __name__ == "__main__":
+    main()

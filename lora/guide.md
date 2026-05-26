@@ -85,7 +85,7 @@ project/
 │
 ├── airflow/
 │   └── dags/
-│       └── training_pipeline.py
+│       └── training_pipeline.py   # KubernetesPodOperator 기반 orchestration
 │
 ├── src/
 │   ├── common/
@@ -152,6 +152,8 @@ Airflow/Kubernetes 종속 레이어. **여기서만** 다음을 처리한다:
 - env vars
 
 Airflow wrapper는 도메인 함수를 호출한 뒤 URI/메타데이터만 XCom에 넘기는 얇은 껍데기여야 한다.
+
+`airflow/dags/training_pipeline.py` 는 각 stage를 `KubernetesPodOperator` 로 실행하고, pod 안에서 `wrappers/` 모듈을 호출하는 방식으로 구성한다.
 
 ### `cli/`
 
