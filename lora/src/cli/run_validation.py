@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 from common.logging import setup_logging
-from data.validation import run
+from data.validation_data import run
 
 
 def main() -> None:

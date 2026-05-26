@@ -7,7 +7,9 @@ from pathlib import Path
 
 
 def _load_properties() -> dict[str, str]:
-    candidates = [Path("/etc/lora/config.properties"), Path.cwd() / "config.properties"]
+    # Check /etc first, then current working directory, then repository root
+    repo_root_cfg = Path(__file__).resolve().parents[2] / "config.properties"
+    candidates = [Path("/etc/lora/config.properties"), Path.cwd() / "config.properties", repo_root_cfg]
     loaded: dict[str, str] = {}
 
     for path in candidates:
@@ -75,8 +77,10 @@ MLFLOW_EXPERIMENT = _get("MLFLOW_EXPERIMENT", "llm-finetune-pipeline")
 MINIO_URL = _get("MINIO_URL", "http://localhost:9000")
 MINIO_ACCESS_KEY = _get("MINIO_ACCESS_KEY", "minioadmin")
 MINIO_SECRET_KEY = _get("MINIO_SECRET_KEY", "minioadmin")
+MINIO_INSECURE = _get_bool("MINIO_INSECURE", False)
 MINIO_BUCKET = _get("MINIO_BUCKET", "lora-data")
-MINIO_RAW_OBJECT_KEY = _get("MINIO_RAW_OBJECT_KEY", "raw/analysis_input.json")
+MINIO_RAW_OBJECT_KEY = _get("MINIO_RAW_OBJECT_KEY", "raw/seed_data.json")
+MINIO_VALIDATED_OBJECT_KEY = _get("MINIO_VALIDATED_OBJECT_KEY", "validated/seed_data.json")
 
 VALIDATION_MAX_NULL_RATIO = _get_float("VALIDATION_MAX_NULL_RATIO", 0.05)
 VALIDATION_MAX_DUP_RATIO = _get_float("VALIDATION_MAX_DUP_RATIO", 0.10)

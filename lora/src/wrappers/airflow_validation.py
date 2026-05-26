@@ -6,7 +6,7 @@ import json
 from pathlib import Path
 
 from common.mlflow_utils import extract_metadata
-from data.validation import run
+from data.validation_data import run
 
 
 def execute() -> dict:

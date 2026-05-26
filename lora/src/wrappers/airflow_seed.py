@@ -6,7 +6,7 @@ import json
 from pathlib import Path
 
 from common.mlflow_utils import extract_metadata
-from data.seed import run
+from data.seed_data import run
 
 
 def execute() -> dict:

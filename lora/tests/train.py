@@ -39,6 +39,7 @@ logging.basicConfig(
 log = logging.getLogger(__name__)
 
 from common import config
+from common.minio import create_minio_client, get_json_object
 
 
 # ==========================================
@@ -109,11 +110,8 @@ def _training_args_for_device(device: torch.device, output_dir: str) -> Training
 # Dataset
 # ==========================================
 def build_dataset(tokenizer):
-    raw_data = [
-        {"text": f"질문 {i}: KubeRay 분산 학습 테스트 시나리오입니다. 답변 {i}: 정상 작동 중입니다.{tokenizer.eos_token}"}
-        for i in range(10)
-    ]
-    dataset = Dataset.from_dict({"text": [d["text"] for d in raw_data]})
+    raw_data = _load_validated_minio_data()
+    dataset = Dataset.from_dict({"text": raw_data})
 
     def tokenize(example):
         model_inputs = tokenizer(
@@ -128,6 +126,23 @@ def build_dataset(tokenizer):
     dataset = dataset.map(tokenize, batched=False)
     split = dataset.train_test_split(test_size=0.1, seed=42)
     return split["train"], split["test"]
+
+
+def _load_validated_minio_data() -> list[str]:
+    client = create_minio_client()
+    payload = get_json_object(client, config.MINIO_BUCKET, config.MINIO_VALIDATED_OBJECT_KEY)
+
+    if isinstance(payload, list):
+        return [str(item).strip() for item in payload if item is not None and str(item).strip()]
+
+    if isinstance(payload, dict):
+        candidate = payload.get("texts") or payload.get("data") or payload.get("items")
+        if isinstance(candidate, list):
+            return [str(item).strip() for item in candidate if item is not None and str(item).strip()]
+
+    raise ValueError(
+        f"MinIO object must contain a JSON list or a mapping with texts/data/items: s3://{config.MINIO_BUCKET}/{config.MINIO_VALIDATED_OBJECT_KEY}"
+    )
 
 
 # ==========================================

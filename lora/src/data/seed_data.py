@@ -1,35 +1,32 @@
-"""Seed initial raw data into MinIO."""
+"""Seed initial MinIO data."""
 
 from __future__ import annotations
 
 import logging
 
-from common.config import (
-    MINIO_BUCKET,
-    MINIO_RAW_OBJECT_KEY,
-)
+from common.config import MINIO_BUCKET, MINIO_RAW_OBJECT_KEY
 from common.minio import create_minio_client, ensure_bucket, put_json_object
 
-log = logging.getLogger("data.seed")
+log = logging.getLogger("data.seed_data")
 
 
 def run() -> dict:
     try:
-        texts = _build_raw_data()
-        _upload_to_minio(texts)
-        log.info("초기 데이터 업로드 완료: s3://%s/%s (%d건)", MINIO_BUCKET, MINIO_RAW_OBJECT_KEY, len(texts))
+        seed_data = _build_seed_data()
+        _upload_to_minio(seed_data)
+        log.info("초기 데이터 업로드 완료: s3://%s/%s (%d건)", MINIO_BUCKET, MINIO_RAW_OBJECT_KEY, len(seed_data))
         return {
             "status": "success",
             "bucket": MINIO_BUCKET,
             "object_key": MINIO_RAW_OBJECT_KEY,
-            "record_count": len(texts),
+            "record_count": len(seed_data),
         }
     except Exception as exc:
         log.error("Task 0 실패: %s", exc, exc_info=True)
         return {"status": "failed", "error": str(exc)}
 
 
-def _build_raw_data() -> list[str | None]:
+def _build_seed_data() -> list[str | None]:
     texts: list[str | None] = []
     for i in range(89):
         texts.append(

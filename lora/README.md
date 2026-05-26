@@ -37,7 +37,7 @@ LoRA 기반 MLOps 파이프라인 프로젝트입니다. 데이터 분석/검증
 - Python 3.12+
 - Docker (이미지 빌드/푸시 시)
 - Ray/MLflow 접속 가능한 환경
-- MinIO 접속 정보(`MINIO_URL`, `MINIO_ACCESS_KEY`, `MINIO_SECRET_KEY`, `MINIO_BUCKET`, `MINIO_RAW_OBJECT_KEY`)
+- MinIO 접속 정보(`MINIO_URL`, `MINIO_ACCESS_KEY`, `MINIO_SECRET_KEY`, `MINIO_INSECURE`, `MINIO_BUCKET`, `MINIO_RAW_OBJECT_KEY`)
 
 환경값 예시는 [config.properties.example](config.properties.example) 를 참고해서 `./config.properties` 또는 `/etc/lora/config.properties` 로 복사해 사용하면 됩니다.
 

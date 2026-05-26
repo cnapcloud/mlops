@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 from common.logging import setup_logging
-from data.seed import run
+from data.seed_data import run
 
 
 def main() -> None:

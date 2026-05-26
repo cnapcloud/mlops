@@ -11,8 +11,8 @@ from typing import Dict
 
 from common.logging import setup_logging
 from data.analysis import run as run_analysis
-from data.validation import run as run_validation
-from data.seed import run as run_seed
+from data.validation_data import run as run_validation
+from data.seed_data import run as run_seed
 from training.evaluate import run as run_evaluate
 from training.promote import run as run_promote
 from training.train import run as run_train
