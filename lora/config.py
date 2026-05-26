@@ -13,6 +13,7 @@ import os
 HF_TOKEN    = os.environ.get("HF_TOKEN", "")
 HF_HOME     = os.environ.get("HF_HOME", "/shared/hf_home")
 MODEL_ID    = os.environ.get("MODEL_ID", "meta-llama/Llama-3.2-1B")
+MODEL_NAME  = os.environ.get("MODEL_NAME", "llm-finetune")
 
 # ─────────────────────────────────────────────
 # Ray / KubeRay

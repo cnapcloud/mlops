@@ -121,13 +121,8 @@ def _build_dataset(model_id: str, hf_token: str):
 
     tokenizer = AutoTokenizer.from_pretrained(model_id)
     raw_data = [
-        {
-            "text": (
-                f"질문 {i}: KubeRay 분산 학습 테스트 시나리오입니다. "
-                f"답변 {i}: 정상 작동 중입니다.{tokenizer.eos_token}"
-            )
-        }
-        for i in range(5)
+        {"text": f"질문 {i}: KubeRay 분산 학습 테스트 시나리오입니다. 답변 {i}: 정상 작동 중입니다.{tokenizer.eos_token}"}
+        for i in range(10)
     ]
     hf_dataset = Dataset.from_dict({"text": [d["text"] for d in raw_data]})
     return ray.data.from_huggingface(hf_dataset)
@@ -147,6 +142,8 @@ def _train_func_per_worker(config: dict) -> None:
                           rt.report()에 mlflow_run_id 포함하여 드라이버에 전달
     """
     import logging
+    import os
+    import json
     import torch
     import mlflow
     import mlflow.transformers
@@ -164,13 +161,6 @@ def _train_func_per_worker(config: dict) -> None:
 
     logger = logging.getLogger(__name__)
 
-    # ── 내부 헬퍼: Ray 배치 → HF Dataset 행 변환 ────────────────────
-    # → 워커 함수 내부에 중첩 정의하여 직렬화 문제 방지
-    def _batch_to_rows(batch: dict) -> list:
-        keys   = list(batch.keys())
-        length = len(batch[keys[0]])
-        return [{k: batch[k][i] for k in keys} for i in range(length)]
-
     epochs     = config["epochs"]
     model_id   = config["model_id"]
     mlflow_cfg = config["mlflow_cfg"]
@@ -182,18 +172,26 @@ def _train_func_per_worker(config: dict) -> None:
     # ── 모델 및 토크나이저 로드 ──────────────────────────────────────
     logger.info("[Rank %d] 모델 로드 중: %s", world_rank, model_id)
     tokenizer = AutoTokenizer.from_pretrained(model_id)
-    tokenizer.pad_token = tokenizer.eos_token
+    
+    # 단일 스크립트 성공 본과 동일하게 pad_token 설정 통일
+    if tokenizer.pad_token is None:
+        tokenizer.pad_token = tokenizer.bos_token
+
+    # 가속기 환경(CUDA) 여부에 따른 dtype 동적 선택
+    device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+    torch_dtype = torch.bfloat16 if device.type == "cuda" else torch.float32
 
     model = AutoModelForCausalLM.from_pretrained(
         model_id,
-        torch_dtype=torch.float32,  # GPU 전환 시 torch.bfloat16
+        torch_dtype=torch_dtype,
     )
+    model.to(device)
 
     # ── LoRA 어댑터 적용 ─────────────────────────────────────────────
     peft_config = LoraConfig(
         r=mlflow_cfg["params"]["lora_r"],
         lora_alpha=mlflow_cfg["params"]["lora_alpha"],
-        target_modules=["q_proj", "v_proj", "k_proj", "o_proj"],
+        target_modules=["q_proj", "k_proj", "v_proj", "o_proj"],
         lora_dropout=0.05,
         bias="none",
         task_type="CAUSAL_LM",
@@ -213,28 +211,41 @@ def _train_func_per_worker(config: dict) -> None:
     )
 
     # ── Ray Dataset 샤드 → HuggingFace Dataset 변환 ─────────────────
-    # Trainer는 HF Dataset만 지원하므로 변환 필요
+    # 단일 스크립트의 성공적인 포맷 자산 유지를 위해 완벽한 텍스트 행으로 언래핑
     local_shard = rt.get_dataset_shard("train_set")
-    rows = [
-        row
-        for batch in local_shard.iter_batches(batch_size=256)
-        for row in _batch_to_rows(batch)
-    ]
+    
+    rows = []
+    for batch in local_shard.iter_batches(batch_size=256):
+        # Ray의 스트리밍 배치 내부 구조에서 순수 text 필드만 엄격하게 분리
+        if "text" in batch:
+            for item in batch["text"]:
+                if isinstance(item, dict):
+                    text_str = item.get("text", "")
+                else:
+                    text_str = str(item)
+                
+                text_str = text_str.strip()
+                # 텍스트 내부에 EOS 토큰이 없거나 누락 빌드된 경우 강제 보정
+                if not text_str.endswith(tokenizer.eos_token):
+                    text_str += tokenizer.eos_token
+                
+                rows.append({"text": text_str})
+
+    if not rows:
+        raise RuntimeError(f"[Rank {world_rank}] 훈련 샤드로부터 파싱된 유효한 텍스트 데이터가 없습니다.")
+
     hf_dataset = HFDataset.from_list(rows)
 
     def tokenize_fn(examples):
-        enc = tokenizer(
-            [str(t) for t in examples["text"]],
-            padding="max_length",
+        # 딕셔너리가 아닌 순수 string 리스트가 안전하게 전달됨
+        model_inputs = tokenizer(
+            examples["text"],
             truncation=True,
             max_length=mlflow_cfg["params"]["max_seq_len"],
         )
-        enc["labels"] = [
-            [-100 if mask == 0 else token_id
-             for mask, token_id in zip(m, ids)]
-            for m, ids in zip(enc["attention_mask"], enc["input_ids"])
-        ]
-        return enc
+        # 복사본을 만들어 콜레이터가 내부 패딩 영역을 찾아내 -100으로 변경하도록 유도
+        model_inputs["labels"] = model_inputs["input_ids"].copy()
+        return model_inputs
 
     tokenized = hf_dataset.map(
         tokenize_fn,
@@ -247,7 +258,7 @@ def _train_func_per_worker(config: dict) -> None:
     train_ds = split["train"]
     eval_ds  = split["test"]
 
-    # ── DataCollator ─────────────────────────────────────────────────
+    # ── DataCollator (동적 패딩 + 라벨 마스킹 자동화) ────────────────
     data_collator = DataCollatorForSeq2Seq(
         tokenizer=tokenizer,
         padding=True,
@@ -267,33 +278,30 @@ def _train_func_per_worker(config: dict) -> None:
         eval_strategy="steps",
         eval_steps=3,
         bf16=False,
-        fp16=False,
+        fp16=(device.type == "cuda"), # CUDA 환경일 때만 fp16 가속 활성화
         lr_scheduler_type="cosine",
         warmup_ratio=0.1,
         max_grad_norm=1.0,
-        dataloader_pin_memory=False,
+        dataloader_pin_memory=(device.type == "cuda"),
         push_to_hub=False,
-        use_cpu=not torch.cuda.is_available(),
+        use_cpu=(device.type == "cpu"),
         report_to="none",
     )
 
-    # ── Trainer (옵티마이저 명시적 전달) ─────────────────────────────
+    # ── Trainer (옵티마이저 전달) ───────────────────────────────────
     trainer = Trainer(
         model=model,
         args=training_args,
         train_dataset=train_ds,
         eval_dataset=eval_ds,
         data_collator=data_collator,
-        optimizers=(optimizer, None),  # (optimizer, lr_scheduler) — scheduler는 Trainer가 생성
+        optimizers=(optimizer, None),
     )
 
     train_result = trainer.train()
     last_loss    = train_result.training_loss
-
     logger.info("[Rank %d] 전체 학습 완료 (최종 loss: %.6f)", world_rank, last_loss)
-
-
-    # 초기화 안 해주면 함수 스코프 밖에서 에러가 날 수 있으므로 미리 선언
+    
     run_id = None
 
     # ── Rank 0이 아닌 워커: MLflow 저장 없이 결과만 리포트 ──────────
@@ -309,8 +317,6 @@ def _train_func_per_worker(config: dict) -> None:
         mlflow.set_tracking_uri(mlflow_cfg["tracking_uri"])
         mlflow.set_experiment(mlflow_cfg["experiment"])
 
-        logger.info("[Rank 0] MLflow Run 시작 중 (Experiment: %s)", mlflow_cfg["experiment"])
-
         with mlflow.start_run() as run:
             run_id = run.info.run_id
             logger.info("[Rank 0] MLflow Run 생성 완료 (Run ID: %s)", run_id)
@@ -318,36 +324,27 @@ def _train_func_per_worker(config: dict) -> None:
             mlflow.log_params(mlflow_cfg["params"])
             mlflow.set_tags(mlflow_cfg["tags"])
             mlflow.log_metric("final_loss", last_loss)
-            logger.info("[Rank 0] 파라미터 / 태그 / 메트릭 기록 완료")
 
-            # DDP 래핑 해제: 원본 모델 추출
+            # 분산 학습용 DDP 래핑 해제 후 원본 모델 및 토크나이저 바인딩
             raw_model = model.module if hasattr(model, "module") else model
+            components = { "model": raw_model, "tokenizer": tokenizer }
 
-            logger.info(
-                "[Rank 0] MLflow에 모델 등록 중 (Model Name: %s)...",
-                mlflow_cfg["registered_model_name"],
-            )
-
-            # ✨ [수정] mlflow_tf 대신 mlflow.transformers.log_model 사용
-            # 인자 역시 transformers_model dict 가 아니라 각각 풀어줍니다.
+            logger.info("[Rank 0] MLflow에 모델 등록 중 (Model Name: %s)...", mlflow_cfg["registered_model_name"])
+            
             mlflow.transformers.log_model(
-                transformers_model={
-                    "model": raw_model,
-                    "tokenizer": tokenizer
-                },
-                artifact_path="model",
+                transformers_model=components,
+                task="text-generation",
+                name="model",
                 registered_model_name=mlflow_cfg["registered_model_name"],
             )
-            logger.info("[Rank 0] MLflow 모델 및 레지스트리 등록 완료!")
+            logger.info("[Rank 0] MLflow 모델 등록 완료")
 
     except Exception as e:
         logger.error("[Rank 0] MLflow 저장 중 에러 발생: %s", str(e), exc_info=True)
         raise
-    
-    checkpoint_dir = os.path.join(
-        output_dir,
-        f"checkpoint_run_{run_id or 'unknown'}",
-    )
+     
+    # 체크포인트 디렉토리 구성 및 메타데이터 동기화
+    checkpoint_dir = os.path.join(output_dir, f"checkpoint_run_{run_id or 'unknown'}")
     os.makedirs(checkpoint_dir, exist_ok=True)
     with open(os.path.join(checkpoint_dir, "metadata.json"), "w", encoding="utf-8") as f:
         json.dump(
@@ -362,12 +359,14 @@ def _train_func_per_worker(config: dict) -> None:
             indent=2,
         )
 
+    # 드라이버단으로 최종 리포트 및 체크포인트 전달
     rt.report({
         "loss":          last_loss,
         "epoch":         epochs - 1,
         "mlflow_run_id": run_id,
     }, checkpoint=Checkpoint.from_directory(checkpoint_dir))
-    logger.info("[Rank 0] 최종 결과 리포트 완료 및 워커 종료")
+    
+    logger.info("[Rank 0] 최종 결과 리포트 완료 및 워커 프로세스 정상 종료")
 
 
 # ─────────────────────────────────────────────

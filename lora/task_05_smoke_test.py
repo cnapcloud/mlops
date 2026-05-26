@@ -23,9 +23,103 @@ Task 5: Smoke Test 후 Production 승격
 import logging
 import time
 
+import torch
+
 from helper import _abort, _run_task
 
 log = logging.getLogger(__name__)
+
+
+def _run_single_test(
+    model,
+    tokenizer,
+    prompt: str,
+    max_new_tokens: int,
+    max_latency: float,
+) -> dict:
+    """단일 프롬프트에 대한 추론을 실행하고 결과를 반환합니다."""
+    import time
+    import torch
+
+    result = {
+        "prompt":           prompt,
+        "passed":           False,
+        "fail_reason":      None,
+        "latency_sec":      0.0,
+        "output_token_count": 0,
+        "output_text":      "",
+    }
+
+    try:     
+        device = "mps" if torch.mps.is_available() else "cpu"
+        model.to(device)
+        if tokenizer.pad_token is None:
+           tokenizer.pad_token = tokenizer.eos_token
+
+        inputs = tokenizer(prompt, return_tensors="pt").to(device)
+        input_len = inputs["input_ids"].shape[1]
+
+        start = time.time()
+        with torch.no_grad():
+            # 4. 생성 매개변수 최적화 (반복 방지 페널티 추가)
+            outputs = model.generate(
+                **inputs,
+                max_new_tokens=max_new_tokens,
+                do_sample=True,
+                temperature=0.7,
+                top_p=0.9,
+                repetition_penalty=1.2,
+                pad_token_id=tokenizer.pad_token_id,
+                eos_token_id=tokenizer.eos_token_id,
+            )
+        latency = time.time() - start
+
+        # 5. 결과 텍스트 디코딩
+        generated_ids = outputs[0][input_len:]
+        output_text = tokenizer.decode(generated_ids, skip_special_tokens=True, clean_up_tokenization_spaces=False)
+        output_tokens = len(generated_ids)
+        
+        # 출력 결과 로그 기록
+        log.info("    Answer: %s", output_text)
+
+        result["latency_sec"] = round(latency, 3)
+        result["output_token_count"] = output_tokens
+        result["output_text"] = output_text
+
+        # 검사 1: 응답 시간 검증
+        if latency > max_latency:
+            result["fail_reason"] = f"응답 시간 초과: {latency:.2f}s > {max_latency}s"
+            return result
+
+        # 검사 2: 빈 응답 검증
+        if output_tokens == 0 or not output_text.strip():
+            result["fail_reason"] = "빈 응답: 출력 토큰 수 = 0 또는 텍스트 비어있음"
+            return result
+
+        result["passed"] = True
+
+    except Exception as e:
+        result["fail_reason"] = f"추론 중 에러 발생: {str(e)}"
+        log.error("추론 에러: %s", str(e), exc_info=True)
+
+    return result
+
+
+def _load_model_from_mlflow(model_name: str, hf_token: str, model_id: str, stage: str = "Staging"):
+    """
+    MLflow Registry에서 Staging 단계의 모델과 토크나이저를 로드합니다.
+    """
+    import mlflow.transformers
+    
+    model_uri = f"models:/{model_name}/{stage}"  # 특정 버전 명시 (예시: 1, 2, 123, [Staging, Production] 등)
+    log.info("MLflow Model Registry에서 모델 다운로드 중: %s", model_uri)
+
+    components = mlflow.transformers.load_model(model_uri, return_type="components")
+    tokenizer = components["tokenizer"]
+    model = components["model"]
+
+    log.info("MLflow 모델 및 토크나이저 로드 완료")
+    return model, tokenizer
 
 
 def run(eval_result: dict) -> dict:
@@ -54,17 +148,16 @@ def run(eval_result: dict) -> dict:
 
         mlflow.set_tracking_uri(MLFLOW_TRACKING_URI)
         client      = MlflowClient()
-        model_name  = MLFLOW_MODEL_NAME
 
         # ── 1. Staging 모델 확인 ─────────────────────────────────────
-        staging_versions = client.get_latest_versions(model_name, stages=["Staging"])
+        staging_versions = client.get_latest_versions(MLFLOW_MODEL_NAME, stages=["Staging"])
         if not staging_versions:
             raise RuntimeError(
                 "Staging 모델이 없습니다. Task 4가 정상 완료되었는지 확인하세요."
             )
 
         staging_version = staging_versions[0].version
-        log.info("Smoke Test 대상: %s v%s (Staging)", model_name, staging_version)
+        log.info("Smoke Test 대상: %s v%s (Staging)", MLFLOW_MODEL_NAME, staging_version)
 
         # ── 2. 모델 로드 ─────────────────────────────────────────────
         model, tokenizer = _load_model_from_mlflow(MLFLOW_MODEL_NAME, HF_TOKEN, MODEL_ID)
@@ -74,7 +167,8 @@ def run(eval_result: dict) -> dict:
         all_passed   = True
 
         for idx, prompt in enumerate(SMOKE_TEST_PROMPTS):
-            log.info("  [%d/%d] 테스트 중: \"%s\"", idx + 1, len(SMOKE_TEST_PROMPTS), prompt)
+            log.info("  [%d/%d] 테스트 중", idx + 1, len(SMOKE_TEST_PROMPTS))
+            log.info("    Question: \"%s\"", prompt)
             result = _run_single_test(
                 model=model,
                 tokenizer=tokenizer,
@@ -128,113 +222,6 @@ def run(eval_result: dict) -> dict:
         return {"status": "failed", "promoted": False, "error": str(e)}
 
 
-# ─────────────────────────────────────────────
-# 내부 함수
-# ─────────────────────────────────────────────
-
-def _load_model_from_mlflow(model_name: str, hf_token: str, model_id: str):
-    """
-    MLflow Registry에서 Staging 단계의 모델과 토크나이저를 로드합니다.
-    """
-    import mlflow.transformers
-    from transformers import AutoTokenizer
-
-    # 1. MLflow Model Registry URI 정의 (models:/모델명/단계)
-    model_uri = f"models:/{model_name}/Staging"
-    log.info("MLflow Model Registry에서 모델 다운로드 중: %s", model_uri)
-
-    # 2. MLflow에 저장된 트랜스포머 파이프라인/모델 객체 로드
-    # (일반적으로 MLflow에 log_model할 때 모델과 토크나이저가 함께 패키징됩니다)
-    components = mlflow.transformers.load_model(model_uri, model_config={"device": "mps"})
-    
-    # 만약 MLflow에 pipeline 형태로 저장했다면 dictionary 구조로 반환됩니다.
-    if isinstance(components, dict):
-        model = components.get("model")
-        tokenizer = components.get("tokenizer")
-    else:
-        # 파이프라인 자체인 경우 원본 모델 추출
-        model = components.model
-        tokenizer = components.tokenizer
-
-    tokenizer.pad_token = tokenizer.eos_token
-    model.eval()
-    
-    log.info("MLflow 모델 및 토크나이저 로드 완료")
-    return model, tokenizer
-
-
-def _run_single_test(
-    model,
-    tokenizer,
-    prompt: str,
-    max_new_tokens: int,
-    max_latency: float,
-) -> dict:
-    """단일 프롬프트에 대한 추론을 실행하고 결과를 반환합니다."""
-    import torch
-
-    result = {
-        "prompt":           prompt,
-        "passed":           False,
-        "fail_reason":      None,
-        "latency_sec":      0.0,
-        "output_token_count": 0,
-        "output_text":      "",
-    }
-
-    try:
-        inputs      = tokenizer(prompt, return_tensors="pt", truncation=True, max_length=256)
-        
-        # ── 💡 [수정] 이 부분이 핵심입니다! ──────────────────────────────
-        # 입력 데이터(input_ids, attention_mask 등)를 모델이 있는 model.device 장치로 강제 이동시킵니다.
-        inputs      = {k: v.to(model.device) for k, v in inputs.items()}
-        # ─────────────────────────────────────────────────────────────
-
-        # input_len을 구할 때도 똑같이 사용 가능합니다.
-        input_len   = inputs["input_ids"].shape[1]
-
-        start = time.time()
-        with torch.no_grad():
-            outputs = model.generate(
-                **inputs,
-                max_new_tokens=max_new_tokens,
-                do_sample=False,
-                pad_token_id=tokenizer.eos_token_id,
-            )
-        latency = time.time() - start
-
-        # 입력 제거 후 생성된 토큰만 추출
-        generated_ids   = outputs[0][input_len:]
-        output_text     = tokenizer.decode(generated_ids, skip_special_tokens=True)
-        output_tokens   = len(generated_ids)
-        
-        # 출력 결과를 콘솔에 표시
-        log.info("answer: %s", output_text)
-
-        result["latency_sec"]           = round(latency, 3)
-        result["output_token_count"]    = output_tokens
-        result["output_text"]           = output_text
-
-        # 검사 1: 응답 시간
-        if latency > max_latency:
-            result["fail_reason"] = f"응답 시간 초과: {latency:.2f}s > {max_latency}s"
-            return result
-
-        # 검사 2: 빈 응답
-        if output_tokens == 0:
-            result["fail_reason"] = "빈 응답: 출력 토큰 수 = 0"
-            return result
-
-        result["passed"] = True
-
-    except Exception as e:
-        result["fail_reason"] = f"추론 예외 발생: {e}"
-        # 예외 발생 시 에러 시간 보정 부분 가독성 개선
-        result["latency_sec"] = round(time.time() - start, 3) if 'start' in locals() else 0.0
-
-    return result
-
-
 def _transition(client, model_name: str, version: str, stage: str) -> None:
     """MLflow 모델 버전의 Stage를 전환합니다."""
     client.transition_model_version_stage(
@@ -277,7 +264,7 @@ def main() -> None:
 
     if not results["promoted"]:
         _abort(
-            f"Smoke Test 실패 → Production 미승격\n  판정: {results['t5']['decision']}",
+            f"Smoke Test 실패 → Production 미승격\n  판정: {results['decision']}",
             results,
         )
 

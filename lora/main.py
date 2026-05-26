@@ -30,7 +30,7 @@ from datetime import datetime
 # 파이프라인 태스크 임포트
 import task_01_data_analysis  as t1
 import task_02_data_validation as t2
-import task_03_train_local           as t3
+import train           as t3
 import task_04_evaluate        as t4
 import task_05_smoke_test      as t5
 from helper import _run_task, _abort, _print_final_summary
