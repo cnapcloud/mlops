@@ -13,106 +13,6 @@ from helper import _run_task, _abort
 log = logging.getLogger(__name__)
 
 
-def run() -> dict:
-    log.info("=" * 60)
-    log.info("Task 3: Train + MLflow 등록 시작")
-    log.info("=" * 60)
-
-    try:
-        import mlflow
-        from mlflow import MlflowClient
-        from config import (
-            MLFLOW_TRACKING_URI,
-            MLFLOW_MODEL_NAME,
-            MLFLOW_EXPERIMENT,
-            HF_TOKEN,
-            RAY_ADDRESS,
-            RAY_STORAGE,
-            RAY_NUM_WORKERS,
-            USE_GPU,
-            TRAIN_EPOCHS,
-            MODEL_ID,
-            HF_HOME,
-            LORA_R,
-            LORA_ALPHA,
-            LEARNING_RATE,
-            MAX_SEQ_LEN,
-            TRAIN_BATCH,
-        )
-
-        if not HF_TOKEN:
-            raise EnvironmentError("HF_TOKEN이 설정되어 있지 않습니다.")
-
-        mlflow.set_tracking_uri(MLFLOW_TRACKING_URI)
-        mlflow.set_experiment(MLFLOW_EXPERIMENT)
-
-        mlflow_cfg = {
-            "tracking_uri":          MLFLOW_TRACKING_URI,
-            "experiment":            MLFLOW_EXPERIMENT,
-            "registered_model_name": MLFLOW_MODEL_NAME,
-            "params": {
-                "model_id":      MODEL_ID,
-                "epochs":        TRAIN_EPOCHS,
-                "num_workers":   RAY_NUM_WORKERS,
-                "use_gpu":       USE_GPU,
-                "lora_r":        LORA_R,
-                "lora_alpha":    LORA_ALPHA,
-                "learning_rate": LEARNING_RATE,
-                "max_seq_len":   MAX_SEQ_LEN,
-                "batch_size":    TRAIN_BATCH,
-            },
-            "tags": {
-                "pipeline":  "mlops-demo",
-                "task":      "llm-finetune",
-                "framework": "transformers+peft",
-            },
-        }
-
-        metrics = _run_ray_training(
-            hf_token=HF_TOKEN,
-            ray_address=RAY_ADDRESS,
-            storage_path=RAY_STORAGE,
-            num_workers=RAY_NUM_WORKERS,
-            use_gpu=USE_GPU,
-            epochs=TRAIN_EPOCHS,
-            model_id=MODEL_ID,
-            hf_home=HF_HOME,
-            mlflow_cfg=mlflow_cfg,
-        )
-
-        run_id = metrics.get("mlflow_run_id")
-        if not run_id:
-            raise RuntimeError(
-                "Rank 0 워커로부터 mlflow_run_id를 받지 못했습니다. "
-                "워커 로그를 확인하세요."
-            )
-        log.info("Rank 0 워커에서 run_id 수신: %s", run_id)
-
-        client = MlflowClient(tracking_uri=MLFLOW_TRACKING_URI)
-        versions = client.get_latest_versions(MLFLOW_MODEL_NAME, stages=["None"])
-        if not versions:
-            raise RuntimeError(
-                f"MLflow Registry에서 '{MLFLOW_MODEL_NAME}' 모델을 찾을 수 없습니다."
-            )
-        model_version = next(
-            (v.version for v in versions if v.run_id == run_id),
-            versions[0].version,
-        )
-        log.info("MLflow 모델 버전 확인: name=%s, version=%s", MLFLOW_MODEL_NAME, model_version)
-
-        return {
-            "status":        "success",
-            "run_id":        run_id,
-            "model_version": model_version,
-            "model_name":    MLFLOW_MODEL_NAME,
-            "metrics":       metrics,
-        }
-
-    except Exception as e:
-        log.error("Task 3 실패: %s", e, exc_info=True)
-        return {"status": "failed", "error": str(e)}
-
-
 def _build_dataset(model_id: str, hf_token: str):
     """Ray Data 데이터셋 구성 (드라이버에서 실행)."""
     import ray
@@ -439,6 +339,102 @@ def _run_ray_training(
     finally:
         ray.shutdown()
         log.info("Ray 연결 종료")
+
+
+def run() -> dict:
+    try:
+        import mlflow
+        from mlflow import MlflowClient
+        from config import (
+            MLFLOW_TRACKING_URI,
+            MLFLOW_MODEL_NAME,
+            MLFLOW_EXPERIMENT,
+            HF_TOKEN,
+            RAY_ADDRESS,
+            RAY_STORAGE,
+            RAY_NUM_WORKERS,
+            USE_GPU,
+            TRAIN_EPOCHS,
+            MODEL_ID,
+            HF_HOME,
+            LORA_R,
+            LORA_ALPHA,
+            LEARNING_RATE,
+            MAX_SEQ_LEN,
+            TRAIN_BATCH,
+        )
+
+        if not HF_TOKEN:
+            raise EnvironmentError("HF_TOKEN이 설정되어 있지 않습니다.")
+
+        mlflow.set_tracking_uri(MLFLOW_TRACKING_URI)
+        mlflow.set_experiment(MLFLOW_EXPERIMENT)
+
+        mlflow_cfg = {
+            "tracking_uri":          MLFLOW_TRACKING_URI,
+            "experiment":            MLFLOW_EXPERIMENT,
+            "registered_model_name": MLFLOW_MODEL_NAME,
+            "params": {
+                "model_id":      MODEL_ID,
+                "epochs":        TRAIN_EPOCHS,
+                "num_workers":   RAY_NUM_WORKERS,
+                "use_gpu":       USE_GPU,
+                "lora_r":        LORA_R,
+                "lora_alpha":    LORA_ALPHA,
+                "learning_rate": LEARNING_RATE,
+                "max_seq_len":   MAX_SEQ_LEN,
+                "batch_size":    TRAIN_BATCH,
+            },
+            "tags": {
+                "pipeline":  "mlops-demo",
+                "task":      "llm-finetune",
+                "framework": "transformers+peft",
+            },
+        }
+
+        metrics = _run_ray_training(
+            hf_token=HF_TOKEN,
+            ray_address=RAY_ADDRESS,
+            storage_path=RAY_STORAGE,
+            num_workers=RAY_NUM_WORKERS,
+            use_gpu=USE_GPU,
+            epochs=TRAIN_EPOCHS,
+            model_id=MODEL_ID,
+            hf_home=HF_HOME,
+            mlflow_cfg=mlflow_cfg,
+        )
+
+        run_id = metrics.get("mlflow_run_id")
+        if not run_id:
+            raise RuntimeError(
+                "Rank 0 워커로부터 mlflow_run_id를 받지 못했습니다. "
+                "워커 로그를 확인하세요."
+            )
+        log.info("Rank 0 워커에서 run_id 수신: %s", run_id)
+
+        client = MlflowClient(tracking_uri=MLFLOW_TRACKING_URI)
+        versions = client.get_latest_versions(MLFLOW_MODEL_NAME, stages=["None"])
+        if not versions:
+            raise RuntimeError(
+                f"MLflow Registry에서 '{MLFLOW_MODEL_NAME}' 모델을 찾을 수 없습니다."
+            )
+        model_version = next(
+            (v.version for v in versions if v.run_id == run_id),
+            versions[0].version,
+        )
+        log.info("MLflow 모델 버전 확인: name=%s, version=%s", MLFLOW_MODEL_NAME, model_version)
+
+        return {
+            "status":        "success",
+            "run_id":        run_id,
+            "model_version": model_version,
+            "model_name":    MLFLOW_MODEL_NAME,
+            "metrics":       metrics,
+        }
+
+    except Exception as e:
+        log.error("Task 3 실패: %s", e, exc_info=True)
+        return {"status": "failed", "error": str(e)}
 
 
 def main() -> None:

@@ -159,9 +159,6 @@ def run(train_result: dict) -> dict:
     train_result : Task 3 반환값
         run_id, model_version, model_name 포함
     """
-    log.info("=" * 60)
-    log.info("Task 4: Evaluate & Stage 비교 시작")
-    log.info("=" * 60)
 
     try:
         import mlflow
@@ -179,7 +176,7 @@ def run(train_result: dict) -> dict:
         client = MlflowClient()
 
         new_version  = str(train_result["model_version"])
-        model_name   = train_result["model_name"]
+        model_name   = MLFLOW_MODEL_NAME
 
         # ── 1. 평가 데이터셋 준비 ────────────────────────────────────
         eval_texts = _build_eval_dataset(EVAL_SAMPLE_COUNT)
@@ -270,7 +267,7 @@ def main() -> None:
     results = _run_task(
         "Task 4: Evaluate",
         run,
-        train_result={"model_name": "llm-finetune", "model_version": "17", "run_id": "f4c96711f88340f4a888d53de72363f4"},
+        train_result={"model_version": "17", "run_id": "f4c96711f88340f4a888d53de72363f4"},
     )
 
     if results["status"] != "success":

@@ -24,10 +24,6 @@ log = logging.getLogger(__name__)
 
 
 def run() -> dict:
-    log.info("=" * 60)
-    log.info("Task 1: Data Analysis 시작")
-    log.info("=" * 60)
-
     try:
         # ── 1. 데이터 로드 ──────────────────────────────────────────
         raw_texts = _load_raw_data()

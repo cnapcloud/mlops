@@ -122,16 +122,25 @@ def _load_model_from_mlflow(model_name: str, hf_token: str, model_id: str, stage
     return model, tokenizer
 
 
-def run(eval_result: dict) -> dict:
+def _transition(client, model_name: str, version: str, stage: str) -> None:
+    """MLflow 모델 버전의 Stage를 전환합니다."""
+    client.transition_model_version_stage(
+        name=model_name,
+        version=version,
+        stage=stage,
+        archive_existing_versions=False,
+    )
+    log.info("  모델 stage 전환: %s v%s → %s", model_name, version, stage)
+
+
+
+def run() -> dict:
     """
     Parameters
     ----------
     eval_result : Task 4 반환값
         promoted, new_version, model_name 포함
     """
-    log.info("=" * 60)
-    log.info("Task 5: Smoke Test 시작")
-    log.info("=" * 60)
 
     try:
         import mlflow
@@ -150,7 +159,8 @@ def run(eval_result: dict) -> dict:
         client      = MlflowClient()
 
         # ── 1. Staging 모델 확인 ─────────────────────────────────────
-        staging_versions = client.get_latest_versions(MLFLOW_MODEL_NAME, stages=["Staging"])
+        model_name = MLFLOW_MODEL_NAME
+        staging_versions = client.get_latest_versions(model_name, stages=["Staging"])
         if not staging_versions:
             raise RuntimeError(
                 "Staging 모델이 없습니다. Task 4가 정상 완료되었는지 확인하세요."
@@ -194,7 +204,7 @@ def run(eval_result: dict) -> dict:
 
         # ── 4. 최종 판정 및 승격 ─────────────────────────────────────
         if all_passed:
-            # _transition(client, model_name, staging_version, "Production")
+            _transition(client, model_name, staging_version, "Production")
             decision = (
                 f"전체 {len(SMOKE_TEST_PROMPTS)}건 테스트 통과 "
                 f"→ v{staging_version} Production 승격"
@@ -222,17 +232,6 @@ def run(eval_result: dict) -> dict:
         return {"status": "failed", "promoted": False, "error": str(e)}
 
 
-def _transition(client, model_name: str, version: str, stage: str) -> None:
-    """MLflow 모델 버전의 Stage를 전환합니다."""
-    client.transition_model_version_stage(
-        name=model_name,
-        version=version,
-        stage=stage,
-        archive_existing_versions=False,
-    )
-    log.info("  모델 stage 전환: %s v%s → %s", model_name, version, stage)
-
-
 def _print_summary(test_results: list, all_passed: bool, version: str) -> None:
     log.info("─" * 40)
     log.info("[ Smoke Test 결과 요약 ]")
@@ -256,7 +255,6 @@ def main() -> None:
     results = _run_task(
         "Task 5: Smoke Test",
         run,
-        eval_result={},
     )
 
     if results["status"] != "success":

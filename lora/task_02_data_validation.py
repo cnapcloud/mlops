@@ -28,10 +28,6 @@ log = logging.getLogger(__name__)
 
 
 def run() -> dict:
-    log.info("=" * 60)
-    log.info("Task 2: Data Validation 시작")
-    log.info("=" * 60)
-
     try:
         from config import (
             ANALYSIS_REPORT_PATH,

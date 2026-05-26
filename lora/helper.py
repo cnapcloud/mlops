@@ -4,7 +4,7 @@ import time
 from typing import Dict
 
 # 동일한 로거 이름을 사용해 main과 로그를 공유합니다.
-log = logging.getLogger("main")
+log = logging.getLogger("helper")
 
 
 def _run_task(name: str, func, **kwargs) -> dict:
