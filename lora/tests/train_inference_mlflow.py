@@ -14,7 +14,7 @@ from transformers import (
     Trainer,
 )
 
-import config  
+from common import config
 
 log = logging.getLogger(__name__)
 

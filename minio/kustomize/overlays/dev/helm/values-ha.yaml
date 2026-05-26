@@ -1,0 +1,62 @@
+mode: distributed
+
+replicas: 4
+drivesPerNode: 1
+pools: 1
+
+image:
+  repository: quay.io/minio/minio
+  tag: RELEASE.2024-12-18T13-15-44Z
+  pullPolicy: IfNotPresent
+
+mcImage:
+  repository: quay.io/minio/mc
+  tag: RELEASE.2024-11-21T17-21-54Z
+  pullPolicy: IfNotPresent
+
+## root 계정은 직접 Secret으로 관리하는 것이 안전
+existingSecret: minio-root-secret
+
+## Console Ingress 설정
+consoleIngress:
+  enabled: true
+  ingressClassName: nginx
+
+  annotations:
+    nginx.ingress.kubernetes.io/backend-protocol: "HTTP"
+    nginx.ingress.kubernetes.io/ssl-redirect: "true"
+    nginx.ingress.kubernetes.io/proxy-body-size: "0"
+
+  hosts:
+    - minio.cnapcloud.com
+
+  path: /
+
+  tls:
+    - secretName: cnapcloud.com-tls
+      hosts:
+        - minio.cnapcloud.com
+
+persistence:
+  enabled: true
+  storageClass: ""
+  accessMode: ReadWriteOnce
+  size: 8Gi
+
+service:
+  type: ClusterIP
+  port: "9000"
+
+consoleService:
+  type: ClusterIP
+  port: "9001"
+
+resources:
+  requests:
+    memory: 1Gi
+
+securityContext:
+  enabled: true
+  runAsUser: 1000
+  runAsGroup: 1000
+  fsGroup: 1000

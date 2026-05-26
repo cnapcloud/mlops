@@ -1,0 +1,11 @@
+apiVersion: builtin
+kind: HelmChartInflationGenerator
+metadata:
+  name: minio
+name: minio
+chartHome: ../../base/helm
+chart: minio
+releaseName: minio
+valuesFile: ./helm/values-sta.yaml
+includeCRDs: true
+namespace: mlops

@@ -38,7 +38,7 @@ logging.basicConfig(
 )
 log = logging.getLogger(__name__)
 
-import config
+from common import config
 
 
 # ==========================================

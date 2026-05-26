@@ -1,0 +1,54 @@
+"""Seed initial raw data into MinIO."""
+
+from __future__ import annotations
+
+import logging
+
+from common.config import (
+    MINIO_BUCKET,
+    MINIO_RAW_OBJECT_KEY,
+)
+from common.minio import create_minio_client, ensure_bucket, put_json_object
+
+log = logging.getLogger("data.seed")
+
+
+def run() -> dict:
+    try:
+        texts = _build_raw_data()
+        _upload_to_minio(texts)
+        log.info("초기 데이터 업로드 완료: s3://%s/%s (%d건)", MINIO_BUCKET, MINIO_RAW_OBJECT_KEY, len(texts))
+        return {
+            "status": "success",
+            "bucket": MINIO_BUCKET,
+            "object_key": MINIO_RAW_OBJECT_KEY,
+            "record_count": len(texts),
+        }
+    except Exception as exc:
+        log.error("Task 0 실패: %s", exc, exc_info=True)
+        return {"status": "failed", "error": str(exc)}
+
+
+def _build_raw_data() -> list[str | None]:
+    texts: list[str | None] = []
+    for i in range(89):
+        texts.append(
+            f"질문 {i}: KubeRay 분산 학습 테스트 시나리오입니다. "
+            f"답변 {i}: Kubernetes 위에서 Ray 클러스터를 구성하여 "
+            f"분산 학습을 수행하는 정상 데이터입니다."
+        )
+    for _ in range(7):
+        texts.append(
+            "질문 0: KubeRay 분산 학습 테스트 시나리오입니다. "
+            "답변 0: Kubernetes 위에서 Ray 클러스터를 구성하여 "
+            "분산 학습을 수행하는 정상 데이터입니다."
+        )
+    for _ in range(4):
+        texts.append(None)
+    return texts
+
+
+def _upload_to_minio(texts: list[str | None]) -> None:
+    client = create_minio_client()
+    ensure_bucket(client, MINIO_BUCKET)
+    put_json_object(client, MINIO_BUCKET, MINIO_RAW_OBJECT_KEY, texts)

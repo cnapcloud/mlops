@@ -36,10 +36,11 @@ with DAG(
     catchup=False,
     tags=["mlops", "lora", "kubernetes-pod-operator"],
 ) as dag:
+    seed = _pod_task("seed", "airflow_seed")
     analysis = _pod_task("analysis", "airflow_analysis")
     validation = _pod_task("validation", "airflow_validation")
     train = _pod_task("train", "airflow_train")
     evaluate = _pod_task("evaluate", "airflow_eval")
     promote = _pod_task("promote", "airflow_promote")
 
-    analysis >> validation >> train >> evaluate >> promote
+    seed >> analysis >> validation >> train >> evaluate >> promote

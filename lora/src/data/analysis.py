@@ -7,7 +7,13 @@ import logging
 import os
 from collections import Counter
 
-from common.config import ANALYSIS_REPORT_PATH, ARTIFACT_DIR
+from common.config import (
+    ANALYSIS_REPORT_PATH,
+    ARTIFACT_DIR,
+    MINIO_BUCKET,
+    MINIO_RAW_OBJECT_KEY,
+)
+from common.minio import create_minio_client, get_json_object
 
 log = logging.getLogger("data.analysis")
 
@@ -28,22 +34,20 @@ def run() -> dict:
 
 
 def _load_raw_data() -> list[str | None]:
-    texts: list[str | None] = []
-    for i in range(89):
-        texts.append(
-            f"질문 {i}: KubeRay 분산 학습 테스트 시나리오입니다. "
-            f"답변 {i}: Kubernetes 위에서 Ray 클러스터를 구성하여 "
-            f"분산 학습을 수행하는 정상 데이터입니다."
-        )
-    for _ in range(7):
-        texts.append(
-            "질문 0: KubeRay 분산 학습 테스트 시나리오입니다. "
-            "답변 0: Kubernetes 위에서 Ray 클러스터를 구성하여 "
-            "분산 학습을 수행하는 정상 데이터입니다."
-        )
-    for _ in range(4):
-        texts.append(None)
-    return texts
+    client = create_minio_client()
+    payload = get_json_object(client, MINIO_BUCKET, MINIO_RAW_OBJECT_KEY)
+
+    if isinstance(payload, list):
+        return payload
+
+    if isinstance(payload, dict):
+        candidate = payload.get("texts") or payload.get("data") or payload.get("items")
+        if isinstance(candidate, list):
+            return candidate
+
+    raise ValueError(
+        f"MinIO object must contain a JSON list or a mapping with texts/data/items: s3://{MINIO_BUCKET}/{MINIO_RAW_OBJECT_KEY}"
+    )
 
 
 def _analyze(texts: list[str | None]) -> dict:

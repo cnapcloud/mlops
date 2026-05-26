@@ -13,7 +13,7 @@ else
 IMAGE ?= $(REGISTRY)/$(IMAGE_NAME):$(IMAGE_TAG)
 endif
 
-.PHONY: venv install run-pipeline build push build-push print-image
+.PHONY: venv install compile seed-data run-pipeline build push build-push print-image
 
 venv:
 	$(PYTHON) -m venv $(VENV)
@@ -21,6 +21,12 @@ venv:
 install: venv
 	$(VENV)/bin/pip install --upgrade pip
 	$(VENV)/bin/pip install -e ".[dev]"
+
+compile: install
+	$(VENV)/bin/python3 -m compileall src tests
+
+seed-data: install
+	$(VENV)/bin/python3 -m cli.run_seed
 
 run-pipeline: install
 	$(VENV)/bin/python3 -m cli.run_pipeline $(PIPELINE_STAGE)

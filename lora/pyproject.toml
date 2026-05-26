@@ -13,6 +13,7 @@ dependencies = [
   "datasets>=2.18.0",
   "peft>=0.10.0",
   "huggingface_hub>=0.22.0",
+  "boto3>=1.34.0",
   "torch>=2.2.0",
   "torchvision",
   "mlflow>=2.13.0",

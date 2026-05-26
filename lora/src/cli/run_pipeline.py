@@ -12,6 +12,7 @@ from typing import Dict
 from common.logging import setup_logging
 from data.analysis import run as run_analysis
 from data.validation import run as run_validation
+from data.seed import run as run_seed
 from training.evaluate import run as run_evaluate
 from training.promote import run as run_promote
 from training.train import run as run_train
@@ -71,6 +72,7 @@ def _print_final_summary(results: Dict, elapsed: float) -> None:
 
 def _print_partial_summary(results: Dict) -> None:
     task_names = {
+        "t0": "Task 0 Data Seed",
         "t1": "Task 1 Data Analysis",
         "t2": "Task 2 Data Validation",
         "t3": "Task 3 Train",
@@ -94,6 +96,10 @@ def _run_full_pipeline() -> None:
     log.info("시작 시각: %s", datetime.now().strftime("%Y-%m-%d %H:%M:%S"))
 
     results: dict = {}
+    results["t0"] = _run_task("Task 0: Data Seed", run_seed)
+    if results["t0"]["status"] != "success":
+        _abort("Task 0 실패", results)
+
     results["t1"] = _run_task("Task 1: Data Analysis", run_analysis)
     if results["t1"]["status"] != "success":
         _abort("Task 1 실패", results)
@@ -126,7 +132,9 @@ def _run_full_pipeline() -> None:
 
 
 def _run_single_stage(stage: str) -> None:
-    if stage == "analysis":
+    if stage == "seed":
+        run_seed()
+    elif stage == "analysis":
         run_analysis()
     elif stage == "validation":
         run_validation()
@@ -148,7 +156,7 @@ def main() -> None:
         "stage",
         nargs="?",
         default="all",
-        choices=["all", "analysis", "validation", "train", "evaluate", "promote"],
+        choices=["all", "seed", "analysis", "validation", "train", "evaluate", "promote"],
         help="실행할 stage (기본값: all)",
     )
     args = parser.parse_args()
