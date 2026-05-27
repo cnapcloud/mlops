@@ -3,31 +3,51 @@
 from __future__ import annotations
 
 import os
+import logging
 from pathlib import Path
 
 
-def _load_properties() -> dict[str, str]:
-    # Check /etc first, then current working directory, then repository root
-    repo_root_cfg = Path(__file__).resolve().parents[2] / "config.properties"
-    candidates = [Path("/etc/lora/config.properties"), Path.cwd() / "config.properties", repo_root_cfg]
-    loaded: dict[str, str] = {}
+log = logging.getLogger(__name__)
 
+def _load_properties() -> dict[str, str]:
+    # 1. 경로 및 환경변수 기본 설정
+    repo_root = Path(__file__).resolve().parents[2]
+    dirs = [Path("/etc/lora"), Path.cwd(), repo_root]
+    
+    # 대소문자 구분 없이 CONFIG 환경변수 가져오기
+    config_name = (os.environ.get("CONFIG") or os.environ.get("config") or "").strip().lower()
+    
+    # 2. 파일 목록 정의 (기본 파일 + 환경별 파일)
+    files = ["config.properties"]
+    if config_name in {"local", "dev", "prd"}:
+        files.append(f"config-{config_name}.properties")
+        
+    # 3. 디렉토리와 파일을 조합하여 우선순위대로 후보 생성
+    # 기본 파일들의 dirs 경로들 -> 환경 파일들의 dirs 경로들 순서로 배열됨
+    candidates = [d / f for f in files for d in dirs]
+    
+    # 4. 로그 출력용 env_candidates 계산 (후반부 3개 경로가 환경 파일에 해당)
+    env_candidates = candidates[3:] if len(files) > 1 else []
+    
+    log.info("Config load candidates: %s", ", ".join(str(path) for path in candidates))
+    log.info("Selected env config: %s", env_candidates[-1] if env_candidates else "none")
+
+    # 5. 프로퍼티 파일 로드 및 병합
+    loaded: dict[str, str] = {}
     for path in candidates:
         if not path.exists():
             continue
 
         for line in path.read_text(encoding="utf-8").splitlines():
             stripped = line.strip()
-            if not stripped or stripped.startswith("#") or stripped.startswith(";"):
-                continue
-            if "=" not in stripped:
+            # 주석 및 잘못된 형식 필터링
+            if not stripped or stripped.startswith(("#", ";")) or "=" not in stripped:
                 continue
 
             key, value = stripped.split("=", 1)
             loaded[key.strip()] = value.strip()
 
     return loaded
-
 
 _PROPERTIES = _load_properties()
 
@@ -76,11 +96,11 @@ LEARNING_RATE = _get_float("LEARNING_RATE", 2e-4)
 LORA_R = _get_int("LORA_R", 8)
 LORA_ALPHA = _get_int("LORA_ALPHA", 16)
 
-MLFLOW_TRACKING_URI = _get("MLFLOW_TRACKING_URI", "http://mlflow.cnapcloud.com")
+MLFLOW_TRACKING_URI = _get("MLFLOW_TRACKING_URI", "http://minio.mlops.svc")
 MLFLOW_MODEL_NAME = _get("MLFLOW_MODEL_NAME", "llm-finetune")
 MLFLOW_EXPERIMENT = _get("MLFLOW_EXPERIMENT", "llm-finetune-pipeline")
 
-MINIO_URL = _get("MINIO_URL", "http://localhost:9000")
+MINIO_URL = _get("MINIO_URL", "http://minio.mlops.svc:9000")
 MINIO_ACCESS_KEY = _get("MINIO_ACCESS_KEY", "minioadmin")
 MINIO_SECRET_KEY = _get("MINIO_SECRET_KEY", "minioadmin")
 MINIO_INSECURE = _get_bool("MINIO_INSECURE", False)

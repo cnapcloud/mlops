@@ -7,7 +7,7 @@ from pathlib import Path
 
 from common.mlflow_utils import extract_metadata
 from data.analysis import run
-
+from common.logging import setup_logging
 
 def execute() -> dict:
     result = run()

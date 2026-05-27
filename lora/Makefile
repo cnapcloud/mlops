@@ -1,6 +1,6 @@
 IMAGE_NAME ?= lora-pipeline
 IMAGE_TAG ?= latest
-REGISTRY ?=
+REGISTRY ?= cnapcloud
 DOCKERFILE ?= Dockerfile
 CONTEXT ?= .
 VENV ?= .venv
@@ -34,7 +34,7 @@ run-pipeline: install
 build:
 	docker build -f $(DOCKERFILE) -t $(IMAGE) $(CONTEXT)
 
-push:
+push: build
 	docker push $(IMAGE)
 
 build-push: build push

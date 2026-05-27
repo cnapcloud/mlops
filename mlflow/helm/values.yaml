@@ -17,6 +17,41 @@ strategy:
 
 extraEnvVars:
   MLFLOW_SERVER_ALLOWED_HOSTS: "*"
+  MLFLOW_S3_ENDPOINT_URL: "http://minio.mlops.svc.cluster.local:9000"
+  MLFLOW_S3_IGNORE_TLS: "false"
+  AWS_DEFAULT_REGION: "us-east-1"
+
+# ---------------------------------------------------------------------------
+# Artifact Root: PVC 스토리지
+# ---------------------------------------------------------------------------
+artifactRoot:
+  proxiedArtifactStorage: true
+  #defaultArtifactRoot: "/mlflow/mlruns"
+  # defaultArtifactsDestination: "/mlflow/mlartifacts"
+
+  s3:
+    enabled: true
+    bucket: "mlflow"
+    path: ""
+    awsAccessKeyId: ""
+    awsSecretAccessKey: ""
+    existingSecret:
+      name: "mlflow-minio-secret"
+      keyOfAccessKeyId: "AWS_ACCESS_KEY_ID"
+      keyOfSecretAccessKey: "AWS_SECRET_ACCESS_KEY"    
+
+
+# ---------------------------------------------------------------------------
+# PVC 마운트(disk에 Artifact 저장)
+# ---------------------------------------------------------------------------
+# extraVolumes:
+#  - name: mlflow-storage
+#    persistentVolumeClaim:
+#      claimName: mlflow-storage-pvc
+
+# extraVolumeMounts:
+#   - name: mlflow-storage
+#     mountPath: /mlflow
 
 # ---------------------------------------------------------------------------
 # Backend Store: 내장 PostgreSQL (Bitnami)
@@ -41,26 +76,6 @@ postgresql:
     username: "mlflow"
     password: "password"
     database: "mlflow"
-
-# ---------------------------------------------------------------------------
-# Artifact Root: PVC 스토리지
-# ---------------------------------------------------------------------------
-artifactRoot:
-  proxiedArtifactStorage: true
-  defaultArtifactRoot: "/mlflow/mlruns"
-  defaultArtifactsDestination: "/mlflow/mlartifacts"
-
-# ---------------------------------------------------------------------------
-# PVC 마운트
-# ---------------------------------------------------------------------------
-extraVolumes:
-  - name: mlflow-storage
-    persistentVolumeClaim:
-      claimName: mlflow-storage-pvc
-
-extraVolumeMounts:
-  - name: mlflow-storage
-    mountPath: /mlflow
 
 # ---------------------------------------------------------------------------
 # Service

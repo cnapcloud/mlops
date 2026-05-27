@@ -17,6 +17,20 @@ mcImage:
   tag: RELEASE.2024-11-21T17-21-54Z
   pullPolicy: IfNotPresent
 
+ingress:
+  enabled: true
+  ingressClassName: ~
+  annotations:
+    nginx.ingress.kubernetes.io/proxy-body-size: "1g"
+  path: /
+  hosts:
+    - minio-api.cnapcloud.com
+  tls:
+    - secretName: cnapcloud.com-tls
+      hosts:
+        - minio-api.cnapcloud.com
+
+
 ## Console Ingress 설정
 consoleIngress:
   enabled: true
