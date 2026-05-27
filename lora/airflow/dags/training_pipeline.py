@@ -51,10 +51,10 @@ def _pod_task(task_id: str, module_name: str, arguments: list[str] | None = None
         image=os.getenv("MLOPS_PIPELINE_IMAGE", "cnapcloud/lora-pipeline:latest"),
         cmds=["python"],
         arguments=["-m", f"wrappers.{module_name}", *(arguments or [])],
-        env_vars={
+        env_vars=[
             secret_env,
             hf_homn_env,
-        },
+        ],
         get_logs=True,
         is_delete_operator_pod=True,
         do_xcom_push=True,
