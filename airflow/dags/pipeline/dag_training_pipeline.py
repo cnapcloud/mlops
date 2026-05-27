@@ -9,7 +9,7 @@ from airflow import DAG
 from airflow.providers.cncf.kubernetes.operators.pod import KubernetesPodOperator
 
 
-def _pod_task(task_id: str, module_name: str, arguments: list[str] | None = None) -> KubernetesPodOperator:
+def _pod_task(task_id: str, module_name: str, arguments: list[str] | None = None, startup_timeout: int = 600) -> KubernetesPodOperator:
     return KubernetesPodOperator(
         task_id=task_id,
         name=task_id.replace("_", "-"),
@@ -26,6 +26,7 @@ def _pod_task(task_id: str, module_name: str, arguments: list[str] | None = None
         is_delete_operator_pod=True,
         do_xcom_push=True,
         image_pull_policy=os.getenv("MLOPS_PIPELINE_IMAGE_PULL_POLICY", "IfNotPresent"),
+        startup_timeout_seconds=startup_timeout,
     )
 
 
