@@ -15,7 +15,7 @@ from common.config import (
     TRAINING_DATA,
 )
 from common.device import get_device
-from common.mlflow_utils import get_latest_version
+from common.mlflow_utils import find_model_info_by_run_id, get_latest_version
 from mlflow import MlflowException
 
 log = logging.getLogger("training.evaluate")
@@ -31,13 +31,15 @@ def _build_eval_dataset(n: int) -> list[str]:
     ]
 
 
-def _evaluate_model(model_uri: str, texts: list[str], hf_token: str, model_id: str) -> float:
+def _evaluate_model(model_uri: str, texts: list[str], model_id: str) -> float:
     log.info("========= Starting MLflow Model Evaluation =========")
     log.info("  Model Artifact URI: %s", model_uri)
 
     try:
         import mlflow.transformers
-
+        # import transformers
+        # transformers.utils.logging.set_verbosity_info()
+        
         components = mlflow.transformers.load_model(
             model_uri=model_uri,
             return_type="components",
@@ -97,7 +99,8 @@ def _resolve_model_uri(train_result: dict | None) -> tuple[str, str, str]:
     run_id = (train_result or {}).get("run_id")
     
     if run_id:
-        return f"runs:/{run_id}/model", (train_result or {}).get("model_version", ""), run_id
+        model_uri, model_version, model_name = find_model_info_by_run_id(run_id)
+        return model_uri, model_version, run_id
     
     latest = get_latest_version(MLFLOW_MODEL_NAME)
     if not latest:
@@ -133,7 +136,7 @@ def run(train_result: dict | None = None) -> dict:
         log.info("Evaluation dataset prepared: %d samples", len(eval_texts))
 
         log.info("Evaluating new model: run_id=%s, uri=%s", run_id, new_model_uri)
-        new_perplexity = _evaluate_model(new_model_uri, eval_texts, HF_TOKEN, MODEL_ID)
+        new_perplexity = _evaluate_model(new_model_uri, eval_texts, MODEL_ID)
         log.info("New model Perplexity: %.4f", new_perplexity)
 
         with mlflow.start_run(run_id=run_id):
@@ -155,7 +158,7 @@ def run(train_result: dict | None = None) -> dict:
         prev_version = staging_version.version
         log.info("Evaluating current Staging model: version=%s", prev_version)
         prev_model_uri = f"models:/{model_name}/{prev_version}"
-        prev_perplexity = _evaluate_model(prev_model_uri, eval_texts, HF_TOKEN, MODEL_ID)
+        prev_perplexity = _evaluate_model(prev_model_uri, eval_texts, MODEL_ID)
         log.info("Current Staging Perplexity: %.4f", prev_perplexity)
 
         improvement = (prev_perplexity - new_perplexity) / prev_perplexity

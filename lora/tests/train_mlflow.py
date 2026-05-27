@@ -3,12 +3,12 @@
 python train_mlflow.py
 
 # inference 모드 + device 지정 (MLflow run_id 또는 registered model 사용)
-python3 train_mlflow.py --mode inference --run-id <mlflow_run_id>
-python3 train_mlflow.py --mode inference --model-name <registered_model_name>
+python3 tests/train_mlflow.py --mode inference --run-id <mlflow_run_id>
+python3 tests/train_mlflow.py --mode inference --model-name <registered_model_name>
 
 # train 모드 + device 지정
-python3 train_mlflow.py --mode train --device mps
-python3 train_mlflow.py --mode train --device cuda
+python3 tests/train_mlflow.py --mode train --device mps
+python3 tests/train_mlflow.py --mode train --device cuda
 python3 train_mlflow.py --mode train --device cpu
 """
 
