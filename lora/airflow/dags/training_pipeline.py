@@ -27,6 +27,23 @@ def _pod_task(task_id: str, module_name: str, arguments: list[str] | None = None
         )
     )
     
+    # Volume Mount 정의 (Pod 내부 컨테이너 안에서 보일 경로)
+    volume_mount = k8s.V1VolumeMount(
+        name="my-pvc-volume",           # 아래 Volume 이름과 일치해야 합니다.
+        mount_path="/mnt/data",         # 컨테이너 내부에 마운트될 경로
+        read_only=False
+    )
+
+    # Volume 정의 (실제 쿠버네티스 PVC 연결)
+    volume = k8s.V1Volume(
+        name="my-pvc-volume",
+        persistent_volume_claim=k8s.V1PersistentVolumeClaimVolumeSource(
+            claim_name="lora-training-pvc"   # 실제 쿠버네티스에 생성되어 있는 PVC 이름
+        )
+    )
+    
+    hf_homn_env = k8s.V1EnvVar(name="HF_HOME", value="/mnt/data/hf_home")
+    
     return KubernetesPodOperator(
         task_id=task_id,
         name=task_id.replace("_", "-"),
@@ -35,12 +52,15 @@ def _pod_task(task_id: str, module_name: str, arguments: list[str] | None = None
         cmds=["python"],
         arguments=["-m", f"wrappers.{module_name}", *(arguments or [])],
         env_vars={
-            "HF_TOKEN": os.getenv("HF_TOKEN", ""),
+            secret_env,
+            hf_homn_env,
         },
         get_logs=True,
         is_delete_operator_pod=True,
         do_xcom_push=True,
         image_pull_policy=os.getenv("MLOPS_PIPELINE_IMAGE_PULL_POLICY", "Always"),
+        volumes=[volume],
+        volume_mounts=[volume_mount],
     )
 
 
