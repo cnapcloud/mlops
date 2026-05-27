@@ -7,9 +7,26 @@ from datetime import datetime
 
 from airflow import DAG
 from airflow.providers.cncf.kubernetes.operators.pod import KubernetesPodOperator
+from kubernetes.client import models as k8s
 
 
 def _pod_task(task_id: str, module_name: str, arguments: list[str] | None = None) -> KubernetesPodOperator:
+    
+    """
+     Kubernetes Secret을 환경 변수로 매핑
+     kubectl  create secret generic hf-secret \
+     --from-literal=HF_TOKEN=your_hf_token -n mlops
+    """
+    secret_env = k8s.V1EnvVar(
+        name="HF_TOKEN",
+        value_from=k8s.V1EnvVarSource(
+            secret_key_ref=k8s.V1SecretKeySelector(
+                name="hf-secret",  # k8s에 생성한 secret 이름
+                key="HF_TOKEN"     # secret 내부의 key 이름
+            )
+        )
+    )
+    
     return KubernetesPodOperator(
         task_id=task_id,
         name=task_id.replace("_", "-"),
@@ -23,7 +40,7 @@ def _pod_task(task_id: str, module_name: str, arguments: list[str] | None = None
         get_logs=True,
         is_delete_operator_pod=True,
         do_xcom_push=True,
-        image_pull_policy=os.getenv("MLOPS_PIPELINE_IMAGE_PULL_POLICY", "IfNotPresent"),
+        image_pull_policy=os.getenv("MLOPS_PIPELINE_IMAGE_PULL_POLICY", "Always"),
     )
 
 

@@ -36,7 +36,7 @@ def _pod_task(task_id: str, module_name: str, arguments: list[str] | None = None
         get_logs=True,
         is_delete_operator_pod=True,
         do_xcom_push=True,
-        image_pull_policy=os.getenv("MLOPS_PIPELINE_IMAGE_PULL_POLICY", "IfNotPresent"),
+        image_pull_policy=os.getenv("MLOPS_PIPELINE_IMAGE_PULL_POLICY", "Always"),
         startup_timeout_seconds=startup_timeout,
     )
 
