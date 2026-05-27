@@ -147,7 +147,7 @@ def run() -> dict:
                 all_passed = False
 
         if all_passed:
-            _set_alias(client, model_name, staging_version, "Production")
+            _set_alias(client, model_name, staging_version, "production")
             decision = f"All {len(SMOKE_TEST_PROMPTS)} tests passed → Promote v{staging_version} to Production"
             log.info("%s", decision)
         else:

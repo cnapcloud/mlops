@@ -6,6 +6,7 @@ import json
 import sys
 from pathlib import Path
 
+from common.logging import setup_logging
 from common.mlflow_utils import extract_metadata
 from training.evaluate import run
 
@@ -16,7 +17,6 @@ def execute(train_result: dict | None = None) -> dict:
     _write_xcom(metadata)
     return metadata
 
-
 def _write_xcom(payload: dict) -> None:
     xcom_path = Path("/airflow/xcom/return.json")
     xcom_path.parent.mkdir(parents=True, exist_ok=True)
@@ -24,10 +24,10 @@ def _write_xcom(payload: dict) -> None:
 
 def main() -> None:
     train_result = None
+    setup_logging("promote")
     if len(sys.argv) > 1 and sys.argv[1].strip():
         train_result = json.loads(sys.argv[1])
     execute(train_result=train_result)
-
 
 if __name__ == "__main__":
     main()
