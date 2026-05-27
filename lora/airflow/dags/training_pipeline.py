@@ -34,7 +34,7 @@ with DAG(
     start_date=datetime(2026, 1, 1),
     schedule=None,
     catchup=False,
-    tags=["mlops", "lora", "kubernetes-pod-operator"],
+    tags=["mlops", "lora-training", "kubernetes-pod-operator"],
 ) as dag:
     seed = _pod_task("seed", "airflow_seed")
     analysis = _pod_task("analysis", "airflow_analysis")
