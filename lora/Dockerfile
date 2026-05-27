@@ -12,5 +12,6 @@ RUN pip install --upgrade pip && pip install -r requirements.txt
 
 COPY src ./src
 COPY airflow ./airflow
+COPY config*.properties ./ 
 
 CMD ["python", "-m", "cli.run_pipeline"]

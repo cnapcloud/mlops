@@ -19,8 +19,6 @@ def _pod_task(task_id: str, module_name: str, arguments: list[str] | None = None
         arguments=["-m", f"wrappers.{module_name}", *(arguments or [])],
         env_vars={
             "HF_TOKEN": os.getenv("HF_TOKEN", ""),
-            "MLFLOW_TRACKING_URI": os.getenv("MLFLOW_TRACKING_URI", ""),
-            "RAY_ADDRESS": os.getenv("RAY_ADDRESS", ""),
         },
         get_logs=True,
         is_delete_operator_pod=True,

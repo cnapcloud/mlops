@@ -34,6 +34,12 @@ run-pipeline: install
 build:
 	docker build -f $(DOCKERFILE) -t $(IMAGE) $(CONTEXT)
 
+run-interactive: build
+	docker run --rm -it \
+        --add-host=mlflow.cnapcloud.com:192.168.0.180 \
+        --add-host=minio-api.cnapcloud.com:192.168.0.180 \
+        $(IMAGE) /bin/bash
+
 push: build
 	docker push $(IMAGE)
 

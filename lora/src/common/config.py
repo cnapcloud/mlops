@@ -78,7 +78,7 @@ HF_HOME = _get("HF_HOME", "/shared/hf_home")
 MODEL_ID = _get("MODEL_ID", "meta-llama/Llama-3.2-1B")
 MODEL_NAME = _get("MODEL_NAME", "llm-finetune")
 
-RAY_ADDRESS = _get("RAY_ADDRESS", "ray://192.168.0.182:10001")
+RAY_ADDRESS = _get("RAY_ADDRESS", "ray://raycluster-head-svc.default.svc:10001")
 RAY_STORAGE = _get("RAY_STORAGE_PATH", "/shared/ray-checkpoints")
 RAY_NUM_WORKERS = _get_int("RAY_NUM_WORKERS", 1)
 USE_GPU = _get_bool("USE_GPU", False)
@@ -96,7 +96,7 @@ LEARNING_RATE = _get_float("LEARNING_RATE", 2e-4)
 LORA_R = _get_int("LORA_R", 8)
 LORA_ALPHA = _get_int("LORA_ALPHA", 16)
 
-MLFLOW_TRACKING_URI = _get("MLFLOW_TRACKING_URI", "http://minio.mlops.svc")
+MLFLOW_TRACKING_URI = _get("MLFLOW_TRACKING_URI", "http://minio.mlops.svc:9000")
 MLFLOW_MODEL_NAME = _get("MLFLOW_MODEL_NAME", "llm-finetune")
 MLFLOW_EXPERIMENT = _get("MLFLOW_EXPERIMENT", "llm-finetune-pipeline")
 
