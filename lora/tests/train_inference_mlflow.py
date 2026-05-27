@@ -42,7 +42,7 @@ def inference(device: torch.device, run_id: str | None = None, model_name: str |
     log.info("모델 로드 완료")
 
     # 3. 추론 진행
-    prompt = "질문 {1}: KubeRay 분산 학습 테스트 시나리오입니다."
+    prompt = "질문 1: MLOps 파이프라인의 핵심 구성 요소를 설명하세요."
     
     # pyfunc 모델의 predict는 텍스트 리스트를 입력으로 받으며, 
     # 내부적으로 tokenizer와 generate가 전부 수행됩니다.

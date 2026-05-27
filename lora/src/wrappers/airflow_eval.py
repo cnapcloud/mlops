@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import json
+import sys
 from pathlib import Path
 
 from common.mlflow_utils import extract_metadata
@@ -22,7 +23,10 @@ def _write_xcom(payload: dict) -> None:
     xcom_path.write_text(json.dumps(payload), encoding="utf-8")
 
 def main() -> None:
-    execute()
+    train_result = None
+    if len(sys.argv) > 1 and sys.argv[1].strip():
+        train_result = json.loads(sys.argv[1])
+    execute(train_result=train_result)
 
 
 if __name__ == "__main__":

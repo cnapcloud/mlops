@@ -40,42 +40,13 @@ log = logging.getLogger(__name__)
 
 from common import config
 from common.minio import create_minio_client, get_json_object
+from common.data import ensure_eos_suffix, load_validated_minio_data
 
 
 # ==========================================
 # Device 선택 유틸
 # ==========================================
-def get_device(prefer: str | None = None) -> torch.device:
-    """
-    prefer: "cpu" | "mps" | "cuda" | None
-      - None 또는 "auto" → mps > cuda > cpu 순으로 자동 감지
-      - 명시하면 해당 device가 실제로 사용 가능한지 확인 후 반환
-        (불가능하면 fallback 없이 RuntimeError)
-    """
-    prefer = (prefer or "auto").lower()
-
-    if prefer == "auto":
-        if torch.backends.mps.is_available():
-            device = torch.device("mps")
-        elif torch.cuda.is_available():
-            device = torch.device("cuda")
-        else:
-            device = torch.device("cpu")
-    elif prefer == "mps":
-        if not torch.backends.mps.is_available():
-            raise RuntimeError("MPS를 요청했지만 이 환경에서 사용할 수 없습니다.")
-        device = torch.device("mps")
-    elif prefer == "cuda":
-        if not torch.cuda.is_available():
-            raise RuntimeError("CUDA를 요청했지만 이 환경에서 사용할 수 없습니다.")
-        device = torch.device("cuda")
-    elif prefer == "cpu":
-        device = torch.device("cpu")
-    else:
-        raise ValueError(f"알 수 없는 device 값: '{prefer}' (cpu | mps | cuda | auto)")
-
-    log.info("device=%s (prefer=%s)", device, prefer)
-    return device
+from common.device import get_device
 
 
 def _training_args_for_device(device: torch.device, output_dir: str) -> TrainingArguments:
@@ -110,8 +81,9 @@ def _training_args_for_device(device: torch.device, output_dir: str) -> Training
 # Dataset
 # ==========================================
 def build_dataset(tokenizer):
-    raw_data = _load_validated_minio_data()
-    dataset = Dataset.from_dict({"text": raw_data})
+    validated_texts = load_validated_minio_data()
+    training_texts = [ensure_eos_suffix(text, tokenizer.eos_token) for text in validated_texts]
+    dataset = Dataset.from_dict({"text": training_texts})
 
     def tokenize(example):
         model_inputs = tokenizer(
@@ -128,21 +100,7 @@ def build_dataset(tokenizer):
     return split["train"], split["test"]
 
 
-def _load_validated_minio_data() -> list[str]:
-    client = create_minio_client()
-    payload = get_json_object(client, config.MINIO_BUCKET, config.MINIO_VALIDATED_OBJECT_KEY)
-
-    if isinstance(payload, list):
-        return [str(item).strip() for item in payload if item is not None and str(item).strip()]
-
-    if isinstance(payload, dict):
-        candidate = payload.get("texts") or payload.get("data") or payload.get("items")
-        if isinstance(candidate, list):
-            return [str(item).strip() for item in candidate if item is not None and str(item).strip()]
-
-    raise ValueError(
-        f"MinIO object must contain a JSON list or a mapping with texts/data/items: s3://{config.MINIO_BUCKET}/{config.MINIO_VALIDATED_OBJECT_KEY}"
-    )
+# MinIO 및 텍스트 준비 관련 유틸을 `common.data`로 이동했습니다.
 
 
 # ==========================================
@@ -233,7 +191,7 @@ def inference(device: torch.device):
     model.to(device)
     model.eval()
 
-    prompt = "질문{1}: KubeRay 분산 학습 테스트 시나리오입니다"
+    prompt = "질문 1: MLOps 파이프라인의 핵심 구성 요소를 설명하세요."
     inputs = tokenizer(prompt, return_tensors="pt").to(device)
 
     with torch.no_grad():

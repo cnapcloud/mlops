@@ -63,6 +63,12 @@ RAY_STORAGE = _get("RAY_STORAGE_PATH", "/shared/ray-checkpoints")
 RAY_NUM_WORKERS = _get_int("RAY_NUM_WORKERS", 1)
 USE_GPU = _get_bool("USE_GPU", False)
 
+# Resources per worker defaults — can be overridden in config.properties or env
+# `WORKER_CPUS` sets number of CPU cores to request per worker when not using GPU
+# `WORKER_GPUS` sets number of GPUs to request per worker when using GPU
+RAY_WORKER_CPUS = _get_int("RAY_WORKER_CPUS", 4)
+RAY_WORKER_GPUS = _get_int("RAY_WORKER_GPUS", 1)
+
 TRAIN_EPOCHS = _get_int("TRAIN_EPOCHS", 3)
 TRAIN_BATCH = _get_int("TRAIN_BATCH", 1)
 MAX_SEQ_LEN = _get_int("MAX_SEQ_LEN", 256)
@@ -87,13 +93,17 @@ VALIDATION_MAX_DUP_RATIO = _get_float("VALIDATION_MAX_DUP_RATIO", 0.10)
 VALIDATION_MIN_SAMPLES = _get_int("VALIDATION_MIN_SAMPLES", 50)
 VALIDATION_MIN_AVG_TOKENS = _get_int("VALIDATION_MIN_AVG_TOKENS", 10)
 
+TRAINING_DATA = [
+    "MLOps 파이프라인의 핵심 구성 요소를 설명하세요.",
+    "데이터 준비, 학습, 평가, 배포 단계로 구성됩니다.",
+]
 EVAL_SAMPLE_COUNT = _get_int("EVAL_SAMPLE_COUNT", 5)
 EVAL_MIN_IMPROVEMENT_RATIO = _get_float("EVAL_MIN_IMPROVEMENT_RATIO", 0.01)
 
 SMOKE_TEST_PROMPTS = [
-    "질문 {0}: KubeRay 분산 학습 테스트 시나리오입니다.",
-    "질문 {1}: KubeRay 분산 학습 테스트 시나리오입니다.",
-    "질문 {2}: KubeRay 분산 학습 테스트 시나리오입니다.",
+    "질문 0 : MLOps 파이프라인의 핵심 구성 요소를 설명하세요.",
+    "질문 1 : MLOps 파이프라인의 핵심 구성 요소를 설명하세요.",
+    "질문 2 : MLOps 파이프라인의 핵심 구성 요소를 설명하세요.",
 ]
 SMOKE_MAX_LATENCY_SEC = _get_float("SMOKE_MAX_LATENCY_SEC", 30.0)
 SMOKE_MAX_NEW_TOKENS = _get_int("SMOKE_MAX_NEW_TOKENS", 50)

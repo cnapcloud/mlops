@@ -4,7 +4,17 @@ from __future__ import annotations
 
 import logging
 
-from common.config import HF_TOKEN, MLFLOW_MODEL_NAME, MLFLOW_TRACKING_URI, MODEL_ID, SMOKE_MAX_LATENCY_SEC, SMOKE_MAX_NEW_TOKENS, SMOKE_TEST_PROMPTS
+from common.config import (
+    HF_TOKEN,
+    MLFLOW_MODEL_NAME,
+    MLFLOW_TRACKING_URI,
+    MODEL_ID,
+    SMOKE_MAX_LATENCY_SEC, 
+    SMOKE_MAX_NEW_TOKENS,
+    SMOKE_TEST_PROMPTS,
+)
+from common.device import get_device
+from mlflow import MlflowException
 
 log = logging.getLogger("training.promote")
 
@@ -24,12 +34,10 @@ def _run_single_test(model, tokenizer, prompt: str, max_new_tokens: int, max_lat
     }
 
     try:
-        device = "mps" if torch.backends.mps.is_available() else "cpu"
-        model.to(device)
         if tokenizer.pad_token is None:
             tokenizer.pad_token = tokenizer.eos_token
 
-        inputs = tokenizer(prompt, return_tensors="pt").to(device)
+        inputs = tokenizer(prompt, return_tensors="pt").to(get_device())
         input_len = inputs["input_ids"].shape[1]
 
         start = time.time()
@@ -50,7 +58,7 @@ def _run_single_test(model, tokenizer, prompt: str, max_new_tokens: int, max_lat
         output_text = tokenizer.decode(generated_ids, skip_special_tokens=True, clean_up_tokenization_spaces=False)
         output_tokens = len(generated_ids)
 
-        log.info("    Answer: %s", output_text)
+        log.info('    Answer: "%s"', output_text)
 
         result["latency_sec"] = round(latency, 3)
         result["output_token_count"] = output_tokens
@@ -71,21 +79,24 @@ def _run_single_test(model, tokenizer, prompt: str, max_new_tokens: int, max_lat
     return result
 
 
-def _load_model_from_mlflow(model_name: str, hf_token: str, model_id: str, stage: str = "Staging"):
+def _load_model_from_mlflow(model_uri: str):
     import mlflow.transformers
 
-    model_uri = f"models:/{model_name}/{stage}"
     log.info("MLflow Model Registry에서 모델 다운로드 중: %s", model_uri)
+    device = get_device()
     components = mlflow.transformers.load_model(model_uri, return_type="components")
     tokenizer = components["tokenizer"]
     model = components["model"]
+    model.to(device)
+    model.eval()
+    
     log.info("MLflow 모델 및 토크나이저 로드 완료")
     return model, tokenizer
 
 
-def _transition(client, model_name: str, version: str, stage: str) -> None:
-    client.transition_model_version_stage(name=model_name, version=version, stage=stage, archive_existing_versions=False)
-    log.info("  모델 stage 전환: %s v%s → %s", model_name, version, stage)
+def _set_alias(client, model_name: str, version: str, alias: str) -> None:
+    client.set_registered_model_alias(name=model_name, alias=alias, version=version)
+    log.info("  모델 Alias 설정: %s v%s → alias '%s'", model_name, version, alias)
 
 
 def _print_summary(test_results: list, all_passed: bool, version: str) -> None:
@@ -109,19 +120,19 @@ def run() -> dict:
         import mlflow
         from mlflow import MlflowClient
 
+        model_name = MLFLOW_MODEL_NAME
         mlflow.set_tracking_uri(MLFLOW_TRACKING_URI)
         client = MlflowClient()
 
-        model_name = MLFLOW_MODEL_NAME
-        staging_versions = client.get_latest_versions(model_name, stages=["Staging"])
-        if not staging_versions:
+        try:
+            staging_mv = client.get_model_version_by_alias(model_name, "staging")
+        except MlflowException:
             raise RuntimeError("Staging 모델이 없습니다. Task 4가 정상 완료되었는지 확인하세요.")
 
-        staging_version = staging_versions[0].version
-        log.info("Smoke Test 대상: %s v%s (Staging)", MLFLOW_MODEL_NAME, staging_version)
+        staging_version = staging_mv.version
+        log.info("Smoke Test 대상: %s v%s (staging)", model_name, staging_version)
 
-        model, tokenizer = _load_model_from_mlflow(MLFLOW_MODEL_NAME, HF_TOKEN, MODEL_ID)
-
+        model, tokenizer = _load_model_from_mlflow(f"models:/{model_name}@staging")
         test_results = []
         all_passed = True
         for idx, prompt in enumerate(SMOKE_TEST_PROMPTS):
@@ -136,7 +147,7 @@ def run() -> dict:
                 all_passed = False
 
         if all_passed:
-            _transition(client, model_name, staging_version, "Production")
+            _set_alias(client, model_name, staging_version, "Production")
             decision = f"전체 {len(SMOKE_TEST_PROMPTS)}건 테스트 통과 → v{staging_version} Production 승격"
             log.info("%s", decision)
         else:

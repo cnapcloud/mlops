@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import logging
 
-from common.config import MINIO_BUCKET, MINIO_RAW_OBJECT_KEY
+from common.config import MINIO_BUCKET, MINIO_RAW_OBJECT_KEY, TRAINING_DATA
 from common.minio import create_minio_client, ensure_bucket, put_json_object
 
 log = logging.getLogger("data.seed_data")
@@ -28,17 +28,15 @@ def run() -> dict:
 
 def _build_seed_data() -> list[str | None]:
     texts: list[str | None] = []
-    for i in range(89):
+    for i in range(20):
         texts.append(
-            f"질문 {i}: KubeRay 분산 학습 테스트 시나리오입니다. "
-            f"답변 {i}: Kubernetes 위에서 Ray 클러스터를 구성하여 "
-            f"분산 학습을 수행하는 정상 데이터입니다."
+            f"질문 {i}: {TRAINING_DATA[0]} "
+            f"답변 {i}: {TRAINING_DATA[1]}"
         )
     for _ in range(7):
         texts.append(
-            "질문 0: KubeRay 분산 학습 테스트 시나리오입니다. "
-            "답변 0: Kubernetes 위에서 Ray 클러스터를 구성하여 "
-            "분산 학습을 수행하는 정상 데이터입니다."
+            f"질문 0: {TRAINING_DATA[0]} "
+            f"답변 0: {TRAINING_DATA[1]}"
         )
     for _ in range(4):
         texts.append(None)

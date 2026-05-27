@@ -23,7 +23,11 @@ from common.config import (
     TRAIN_BATCH,
     TRAIN_EPOCHS,
     USE_GPU,
+    RAY_WORKER_CPUS,
+    RAY_WORKER_GPUS,
 )
+from common.device import get_device
+from common.data import ensure_eos_suffix, load_validated_minio_data
 
 log = logging.getLogger("training.train")
 
@@ -35,11 +39,11 @@ def _build_dataset(model_id: str, hf_token: str):
     from transformers import AutoTokenizer
 
     tokenizer = AutoTokenizer.from_pretrained(model_id)
-    raw_data = [
-        {"text": f"질문 {i}: KubeRay 분산 학습 테스트 시나리오입니다. 답변 {i}: 정상 작동 중입니다.{tokenizer.eos_token}"}
-        for i in range(10)
-    ]
-    hf_dataset = Dataset.from_dict({"text": [d["text"] for d in raw_data]})
+    validated_texts = load_validated_minio_data()
+    training_texts = [ensure_eos_suffix(text, tokenizer.eos_token) for text in validated_texts]
+
+    # `Dataset.from_dict` expects a mapping of column name -> list, not a bare list.
+    hf_dataset = Dataset.from_dict({"text": training_texts})
     return ray.data.from_huggingface(hf_dataset)
 
 
@@ -78,8 +82,8 @@ def _train_func_per_worker(config: dict) -> None:
     if tokenizer.pad_token is None:
         tokenizer.pad_token = tokenizer.bos_token
 
-    device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
-    torch_dtype = torch.bfloat16 if device.type == "cuda" else torch.float32
+    device = get_device()
+    torch_dtype = torch.bfloat16 if device == "mps" else torch.float32
 
     model = AutoModelForCausalLM.from_pretrained(model_id, torch_dtype=torch_dtype)
     model.to(device)
@@ -261,7 +265,7 @@ def _run_ray_training(
 
     try:
         ray_dataset = _build_dataset(model_id=model_id, hf_token=hf_token)
-        resources_per_worker = {"GPU": 1} if use_gpu else {"CPU": 4}
+        resources_per_worker = {"GPU": RAY_WORKER_GPUS} if use_gpu else {"CPU": RAY_WORKER_CPUS}
         scaling_config = ScalingConfig(num_workers=num_workers, use_gpu=use_gpu, resources_per_worker=resources_per_worker)
 
         trainer = TorchTrainer(

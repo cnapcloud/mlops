@@ -18,7 +18,12 @@ from common.config import (
     VALIDATION_MIN_SAMPLES,
     VALIDATION_REPORT_PATH,
 )
-from common.minio import create_minio_client, ensure_bucket, get_json_object, put_json_object
+from common.minio import (
+    create_minio_client,
+    ensure_bucket,
+    get_json_object,
+    put_json_object,
+)
 from data.analysis import _analyze
 
 log = logging.getLogger("data.validation_data")
@@ -28,12 +33,18 @@ def run() -> dict:
     try:
         if not os.path.exists(ANALYSIS_REPORT_PATH):
             raise FileNotFoundError(
-                f"분석 리포트를 찾을 수 없습니다: {ANALYSIS_REPORT_PATH}\nTask 1이 먼저 실행되어야 합니다."
+                f"Analysis report not found: "
+                f"{ANALYSIS_REPORT_PATH}"
             )
 
         analysis = _load_analysis_report()
+
         source_summary = analysis["summary"]
-        log.info("분석 리포트 로드 완료: %s", ANALYSIS_REPORT_PATH)
+
+        log.info(
+            "Loaded analysis report: %s",
+            ANALYSIS_REPORT_PATH,
+        )
 
         source_checks = _run_checks(
             summary=source_summary,
@@ -44,14 +55,21 @@ def run() -> dict:
         )
 
         source_texts = _load_seed_data()
-        repaired_texts, repair_actions = _repair_texts(
+
+        (
+            repaired_texts,
+            repair_actions,
+            invalid_records,
+            duplicate_records,
+        ) = _repair_texts(
             source_texts,
-            source_checks,
-            VALIDATION_MIN_SAMPLES,
-            VALIDATION_MIN_AVG_TOKENS,
+            checks=source_checks,
+            min_samples=VALIDATION_MIN_SAMPLES,
+            min_avg_tokens=VALIDATION_MIN_AVG_TOKENS,
         )
 
         repaired_analysis = _analyze(repaired_texts)
+
         repaired_checks = _run_checks(
             summary=repaired_analysis["summary"],
             max_null_ratio=VALIDATION_MAX_NULL_RATIO,
@@ -60,12 +78,13 @@ def run() -> dict:
             min_avg_tokens=VALIDATION_MIN_AVG_TOKENS,
         )
 
-        if not all(check["passed"] for check in repaired_checks.values()):
-            raise RuntimeError(f"정제 후에도 검증 기준을 만족하지 못했습니다: {repaired_checks}")
+        passed = all(
+            check["passed"]
+            for check in repaired_checks.values()
+        )
 
         _upload_to_minio(repaired_texts)
 
-        passed = all(check["passed"] for check in repaired_checks.values())
         _print_result(repaired_checks, passed)
 
         report = {
@@ -73,6 +92,8 @@ def run() -> dict:
             "checks": repaired_checks,
             "source_checks": source_checks,
             "repair_actions": repair_actions,
+            "invalid_records_removed": invalid_records,
+            "duplicate_records_removed": duplicate_records,
             "source_object_key": MINIO_RAW_OBJECT_KEY,
             "repaired_object_key": MINIO_VALIDATED_OBJECT_KEY,
             "thresholds": {
@@ -84,45 +105,99 @@ def run() -> dict:
             "source_summary": source_summary,
             "repaired_summary": repaired_analysis["summary"],
         }
+
         os.makedirs(ARTIFACT_DIR, exist_ok=True)
-        with open(VALIDATION_REPORT_PATH, "w", encoding="utf-8") as handle:
-            json.dump(report, handle, ensure_ascii=False, indent=2)
-        log.info("검증 리포트 저장: %s", VALIDATION_REPORT_PATH)
-        log.info("정제된 데이터 업로드 완료: s3://%s/%s", MINIO_BUCKET, MINIO_VALIDATED_OBJECT_KEY)
+
+        with open(
+            VALIDATION_REPORT_PATH,
+            "w",
+            encoding="utf-8",
+        ) as handle:
+            json.dump(
+                report,
+                handle,
+                ensure_ascii=False,
+                indent=2,
+            )
+
+        log.info(
+            "Validation report saved: %s",
+            VALIDATION_REPORT_PATH,
+        )
+
+        log.info(
+            "Cleaned dataset uploaded: "
+            "s3://%s/%s",
+            MINIO_BUCKET,
+            MINIO_VALIDATED_OBJECT_KEY,
+        )
 
         return {
-            "status": "success",
+            "status": "success" if passed else "failed",
             "passed": passed,
             "checks": repaired_checks,
             "repair_actions": repair_actions,
+            "invalid_records_removed": len(
+                invalid_records
+            ),
+            "duplicate_records_removed": len(
+                duplicate_records
+            ),
             "source_object_key": MINIO_RAW_OBJECT_KEY,
-            "repaired_object_key": MINIO_VALIDATED_OBJECT_KEY,
+            "repaired_object_key": (
+                MINIO_VALIDATED_OBJECT_KEY
+            ),
             "report_path": VALIDATION_REPORT_PATH,
         }
+
     except Exception as exc:
-        log.error("Task 2 실패: %s", exc, exc_info=True)
-        return {"status": "failed", "passed": False, "error": str(exc)}
+        log.error(
+            "Validation task failed: %s",
+            exc,
+            exc_info=True,
+        )
+
+        return {
+            "status": "failed",
+            "passed": False,
+            "error": str(exc),
+        }
 
 
 def _load_analysis_report() -> dict:
-    with open(ANALYSIS_REPORT_PATH, "r", encoding="utf-8") as handle:
+    with open(
+        ANALYSIS_REPORT_PATH,
+        "r",
+        encoding="utf-8",
+    ) as handle:
         return json.load(handle)
 
 
 def _load_seed_data() -> list[str | None]:
     client = create_minio_client()
-    payload = get_json_object(client, MINIO_BUCKET, MINIO_RAW_OBJECT_KEY)
+
+    payload = get_json_object(
+        client,
+        MINIO_BUCKET,
+        MINIO_RAW_OBJECT_KEY,
+    )
 
     if isinstance(payload, list):
         return payload
 
     if isinstance(payload, dict):
-        candidate = payload.get("texts") or payload.get("data") or payload.get("items")
+        candidate = (
+            payload.get("texts")
+            or payload.get("data")
+            or payload.get("items")
+        )
+
         if isinstance(candidate, list):
             return candidate
 
     raise ValueError(
-        f"MinIO object must contain a JSON list or a mapping with texts/data/items: s3://{MINIO_BUCKET}/{MINIO_RAW_OBJECT_KEY}"
+        "MinIO object must contain "
+        "a JSON list or texts/data/items"
     )
 
 
@@ -131,74 +206,137 @@ def _repair_texts(
     checks: dict,
     min_samples: int,
     min_avg_tokens: float,
-) -> tuple[list[str], list[str]]:
-    normalized = [_normalize_text(text) for text in texts]
-    cleaned = [text for text in normalized if text]
+) -> tuple[
+    list[str],
+    list[str],
+    list[str],
+    list[str],
+]:
+    normalized: list[str] = []
+    invalid_records: list[str] = []
+
+    # 1. 유효하지 않은 데이터(None, 공백 등) 제거 및 정규화
+    for text in texts:
+        normalized_text = _normalize_text(text)
+
+        if normalized_text is None:
+            invalid_records.append(str(text))
+            continue
+
+        normalized.append(normalized_text)
+
     repair_actions: list[str] = []
 
-    if not checks["null_ratio"]["passed"]:
-        repair_actions.append("removed_null_and_blank_records")
+    if invalid_records:
+        repair_actions.append("removed_invalid_records")
 
+    # 2. 중복 데이터 제거
     deduped: list[str] = []
+    duplicate_records: list[str] = []
     seen: set[str] = set()
-    for text in cleaned:
+
+    for text in normalized:
         if text in seen:
+            duplicate_records.append(text)
             continue
+
         seen.add(text)
         deduped.append(text)
 
-    if not checks["duplicate_ratio"]["passed"] and len(deduped) != len(cleaned):
+    if duplicate_records:
         repair_actions.append("removed_duplicate_records")
+
 
     repaired = deduped
 
-    if not checks["avg_tokens"]["passed"]:
-        repaired = [_expand_text(text, min_avg_tokens) for text in repaired]
-        repair_actions.append("expanded_texts_to_raise_average_tokens")
-
-    if not checks["min_samples"]["passed"]:
-        repaired = _pad_samples(repaired, min_samples)
-        repair_actions.append(f"augmented_to_min_samples_{min_samples}")
-
-    return repaired, repair_actions
+    return (
+        repaired,
+        repair_actions,
+        invalid_records,
+        duplicate_records,
+    )
 
 
-def _normalize_text(text: str | None) -> str | None:
+def _normalize_text(
+    text: str | None,
+) -> str | None:
     if text is None:
         return None
+
     if not isinstance(text, str):
         return str(text).strip() or None
+
     normalized = text.strip()
+
     return normalized or None
 
 
-def _expand_text(text: str, min_avg_tokens: float) -> str:
+def _expand_text(
+    text: str,
+    min_avg_tokens: float,
+) -> str:
     expanded = text
-    suffix = " 검증 기준을 충족하도록 세부 설명을 추가한 보강 문장입니다."
 
-    while len(expanded.split()) * 1.3 < min_avg_tokens:
+    suffix = (
+        " Additional validation augmentation "
+        "content was appended."
+    )
+
+    while (
+        len(expanded.split()) * 1.3
+        < min_avg_tokens
+    ):
         expanded = f"{expanded}{suffix}"
 
     return expanded
 
 
-def _pad_samples(texts: list[str], min_samples: int) -> list[str]:
+def _pad_samples(
+    texts: list[str],
+    min_samples: int,
+) -> list[str]:
     repaired = list(texts)
-    base_texts = repaired or ["질문 보강: 누락 데이터를 복구했습니다. 답변 보강: 검증 기준을 만족하도록 복원한 샘플입니다."]
+
+    base_texts = repaired or [
+        (
+            "Recovered fallback sample "
+            "generated for validation."
+        )
+    ]
+
     index = 0
 
     while len(repaired) < min_samples:
-        template = base_texts[index % len(base_texts)]
-        repaired.append(f"{template} (보강본 {index + 1})")
+        template = base_texts[
+            index % len(base_texts)
+        ]
+
+        repaired.append(
+            f"{template} "
+            f"(augmented {index + 1})"
+        )
+
         index += 1
 
     return repaired
 
 
-def _upload_to_minio(texts: list[str]) -> None:
+def _upload_to_minio(
+    texts: list[str],
+) -> None:
     client = create_minio_client()
-    ensure_bucket(client, MINIO_BUCKET)
-    put_json_object(client, MINIO_BUCKET, MINIO_VALIDATED_OBJECT_KEY, texts)
+
+    ensure_bucket(
+        client,
+        MINIO_BUCKET,
+    )
+
+    put_json_object(
+        client,
+        MINIO_BUCKET,
+        MINIO_VALIDATED_OBJECT_KEY,
+        texts,
+    )
 
 
 def _run_checks(
@@ -209,50 +347,112 @@ def _run_checks(
     min_avg_tokens: float,
 ) -> dict:
     checks = {}
+
     null_ratio = summary["null_ratio"]
+
     checks["null_ratio"] = {
-        "description": f"Null 비율 < {max_null_ratio * 100:.0f}%",
-        "actual": round(null_ratio * 100, 2),
-        "threshold": max_null_ratio * 100,
-        "passed": null_ratio < max_null_ratio,
+        "description": (
+            f"Null ratio < "
+            f"{max_null_ratio * 100:.0f}%"
+        ),
+        "actual": round(
+            null_ratio * 100,
+            2,
+        ),
+        "threshold": (
+            max_null_ratio * 100
+        ),
+        "passed": (
+            null_ratio < max_null_ratio
+        ),
     }
 
     dup_ratio = summary["duplicate_ratio"]
+
     checks["duplicate_ratio"] = {
-        "description": f"중복 비율 < {max_dup_ratio * 100:.0f}%",
-        "actual": round(dup_ratio * 100, 2),
-        "threshold": max_dup_ratio * 100,
-        "passed": dup_ratio < max_dup_ratio,
+        "description": (
+            f"Duplicate ratio < "
+            f"{max_dup_ratio * 100:.0f}%"
+        ),
+        "actual": round(
+            dup_ratio * 100,
+            2,
+        ),
+        "threshold": (
+            max_dup_ratio * 100
+        ),
+        "passed": (
+            dup_ratio < max_dup_ratio
+        ),
     }
 
     valid_count = summary["valid_count"]
+
     checks["min_samples"] = {
-        "description": f"유효 샘플 수 >= {min_samples}건",
+        "description": (
+            f"Valid samples >= "
+            f"{min_samples}"
+        ),
         "actual": valid_count,
         "threshold": min_samples,
-        "passed": valid_count >= min_samples,
+        "passed": (
+            valid_count >= min_samples
+        ),
     }
 
-    avg_tokens = summary["avg_tokens_estimated"]
+    avg_tokens = summary[
+        "avg_tokens_estimated"
+    ]
+
     checks["avg_tokens"] = {
-        "description": f"평균 추정 토큰 수 >= {min_avg_tokens}",
-        "actual": round(avg_tokens, 2),
+        "description": (
+            f"Average tokens >= "
+            f"{min_avg_tokens}"
+        ),
+        "actual": round(
+            avg_tokens,
+            2,
+        ),
         "threshold": min_avg_tokens,
-        "passed": avg_tokens >= min_avg_tokens,
+        "passed": (
+            avg_tokens >= min_avg_tokens
+        ),
     }
 
     return checks
 
 
-def _print_result(checks: dict, passed: bool) -> None:
-    log.info("─" * 40)
-    log.info("[ 데이터 검증 결과 ]")
-    for _, result in checks.items():
-        status_mark = "✅ PASS" if result["passed"] else "❌ FAIL"
-        log.info("  %s  %s  (실제값: %s, 기준: %s)", status_mark, result["description"], result["actual"], result["threshold"])
-    log.info("─" * 40)
+def _print_result(
+    checks: dict,
+    passed: bool,
+) -> None:
+    log.info("-" * 40)
+    log.info("[ Validation Result ]")
+
+    for result in checks.values():
+        status = (
+            "PASS"
+            if result["passed"]
+            else "FAIL"
+        )
+
+        log.info(
+            "%s | %s | actual=%s | threshold=%s",
+            status,
+            result["description"],
+            result["actual"],
+            result["threshold"],
+        )
+
+    log.info("-" * 40)
+
     if passed:
-        log.info("  최종 판정: ✅ 검증 통과 → 수정본 S3 업로드 완료")
+        log.info(
+            "Final result: validation passed"
+        )
     else:
-        log.warning("  최종 판정: ❌ 검증 실패 → 파이프라인 중단")
-    log.info("─" * 40)
+        log.warning(
+            "Final result: validation failed"
+        )
+
+    log.info("-" * 40)
