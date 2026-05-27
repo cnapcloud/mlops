@@ -9,7 +9,9 @@ from airflow import DAG
 from airflow.providers.cncf.kubernetes.operators.pod import KubernetesPodOperator
 from kubernetes.client import models as k8s
 
-def _pod_task(task_id: str, module_name: str, arguments: list[str] | None = None, startup_timeout: int = 600) -> KubernetesPodOperator:
+
+def _pod_task(task_id: str, module_name: str, arguments: list[str] | None = None) -> KubernetesPodOperator:
+    
     """
      Kubernetes Secret을 환경 변수로 매핑
      kubectl  create secret generic hf-secret \
@@ -24,7 +26,24 @@ def _pod_task(task_id: str, module_name: str, arguments: list[str] | None = None
             )
         )
     )
+    
+    # Volume Mount 정의 (Pod 내부 컨테이너 안에서 보일 경로)
+    volume_mount = k8s.V1VolumeMount(
+        name="my-pvc-volume",           # 아래 Volume 이름과 일치해야 합니다.
+        mount_path="/mnt/data",         # 컨테이너 내부에 마운트될 경로
+        read_only=False
+    )
 
+    # Volume 정의 (실제 쿠버네티스 PVC 연결)
+    volume = k8s.V1Volume(
+        name="my-pvc-volume",
+        persistent_volume_claim=k8s.V1PersistentVolumeClaimVolumeSource(
+            claim_name="lora-training-pvc"   # 실제 쿠버네티스에 생성되어 있는 PVC 이름
+        )
+    )
+    
+    hf_homn_env = k8s.V1EnvVar(name="HF_HOME", value="/mnt/data/hf_home")
+    
     return KubernetesPodOperator(
         task_id=task_id,
         name=task_id.replace("_", "-"),
@@ -32,13 +51,18 @@ def _pod_task(task_id: str, module_name: str, arguments: list[str] | None = None
         image=os.getenv("MLOPS_PIPELINE_IMAGE", "cnapcloud/lora-pipeline:latest"),
         cmds=["python"],
         arguments=["-m", f"wrappers.{module_name}", *(arguments or [])],
-        env_vars=[secret_env],
+        env_vars={
+            secret_env,
+            hf_homn_env,
+        },
         get_logs=True,
         is_delete_operator_pod=True,
         do_xcom_push=True,
         image_pull_policy=os.getenv("MLOPS_PIPELINE_IMAGE_PULL_POLICY", "Always"),
-        startup_timeout_seconds=startup_timeout,
+        volumes=[volume],
+        volume_mounts=[volume_mount],
     )
+
 
 
 with DAG(
