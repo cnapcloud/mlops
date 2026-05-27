@@ -7,9 +7,9 @@ log = logging.getLogger(__name__)
 def get_device(prefer: str | None = None) -> torch.device:
     """
     prefer: "cpu" | "mps" | "cuda" | None
-      - None 또는 "auto" → mps > cuda > cpu 순으로 자동 감지
-      - 명시하면 해당 device가 실제로 사용 가능한지 확인 후 반환
-        (불가능하면 fallback 없이 RuntimeError)
+      - None or "auto" → Auto-detects in order: mps > cuda > cpu
+      - Specific value → Verifies if the requested device is available and returns it
+        (Throws a RuntimeError if unavailable, with no fallback)
     """
     prefer = (prefer or "auto").lower()
 
@@ -22,16 +22,16 @@ def get_device(prefer: str | None = None) -> torch.device:
             device = torch.device("cpu")
     elif prefer == "mps":
         if not torch.backends.mps.is_available():
-            raise RuntimeError("MPS를 요청했지만 이 환경에서 사용할 수 없습니다.")
+            raise RuntimeError("MPS was requested but is not available in this environment.")
         device = torch.device("mps")
     elif prefer == "cuda":
         if not torch.cuda.is_available():
-            raise RuntimeError("CUDA를 요청했지만 이 환경에서 사용할 수 없습니다.")
+            raise RuntimeError("CUDA was requested but is not available in this environment.")
         device = torch.device("cuda")
     elif prefer == "cpu":
         device = torch.device("cpu")
     else:
-        raise ValueError(f"알 수 없는 device 값: '{prefer}' (cpu | mps | cuda | auto)")
+        raise ValueError(f"Unknown device specified: '{prefer}' (Supported: cpu | mps | cuda | auto)")
 
     log.debug("device=%s (prefer=%s)", device, prefer)
     return device

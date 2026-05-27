@@ -33,7 +33,7 @@ log = logging.getLogger("training.train")
 
 
 def _build_dataset(model_id: str, hf_token: str):
-    """Ray Data 데이터셋 구성 (드라이버에서 실행)."""
+    """Construct Ray Data dataset (executed on driver)."""
     import ray
     from datasets import Dataset
     from transformers import AutoTokenizer
@@ -48,7 +48,7 @@ def _build_dataset(model_id: str, hf_token: str):
 
 
 def _train_func_per_worker(config: dict) -> None:
-    """각 KubeRay 워커 Pod에서 실행되는 학습 함수."""
+    """Training function executed on each KubeRay worker Pod."""
     import json
     import logging
 
@@ -75,9 +75,9 @@ def _train_func_per_worker(config: dict) -> None:
 
     world_size = rt.get_context().get_world_size()
     world_rank = rt.get_context().get_world_rank()
-    logger.info("[Rank %d/%d] 워커 시작", world_rank, world_size)
+    logger.info("[Rank %d/%d] Worker started", world_rank, world_size)
 
-    logger.info("[Rank %d] 모델 로드 중: %s", world_rank, model_id)
+    logger.info("[Rank %d] Loading model: %s", world_rank, model_id)
     tokenizer = AutoTokenizer.from_pretrained(model_id)
     if tokenizer.pad_token is None:
         tokenizer.pad_token = tokenizer.bos_token
@@ -100,7 +100,7 @@ def _train_func_per_worker(config: dict) -> None:
     model.gradient_checkpointing_enable()
 
     logger.info(
-        "[Rank %d] 모델 로드 완료 (trainable params: %d)",
+        "[Rank %d] Model loading completed (trainable params: %d)",
         world_rank,
         sum(p.numel() for p in model.parameters() if p.requires_grad),
     )
@@ -125,7 +125,7 @@ def _train_func_per_worker(config: dict) -> None:
                 rows.append({"text": text_str})
 
     if not rows:
-        raise RuntimeError(f"[Rank {world_rank}] 훈련 샤드로부터 파싱된 유효한 텍스트 데이터가 없습니다.")
+        raise RuntimeError(f"[Rank {world_rank}] No valid text data parsed from the training shard.")
 
     hf_dataset = HFDataset.from_list(rows)
 
@@ -178,15 +178,15 @@ def _train_func_per_worker(config: dict) -> None:
 
     train_result = trainer.train()
     last_loss = train_result.training_loss
-    logger.info("[Rank %d] 전체 학습 완료 (최종 loss: %.6f)", world_rank, last_loss)
+    logger.info("[Rank %d] Full training pipeline completed (Final loss: %.6f)", world_rank, last_loss)
 
     run_id = None
     if world_rank != 0:
-        logger.info("[Rank %d] Rank 0이 아니므로 MLflow 저장을 건너뜁니다.", world_rank)
+        logger.info("[Rank %d] Skipping MLflow saving since this is not Rank 0.", world_rank)
         rt.report({"loss": last_loss, "epoch": epochs - 1})
         return
 
-    logger.info("[Rank 0] MLflow 연동 시작 (Tracking URI: %s)", mlflow_cfg["tracking_uri"])
+    logger.info("[Rank 0] Starting MLflow logging integration (Tracking URI: %s)", mlflow_cfg["tracking_uri"])
 
     try:
         mlflow.set_tracking_uri(mlflow_cfg["tracking_uri"])
@@ -194,7 +194,7 @@ def _train_func_per_worker(config: dict) -> None:
 
         with mlflow.start_run() as run:
             run_id = run.info.run_id
-            logger.info("[Rank 0] MLflow Run 생성 완료 (Run ID: %s)", run_id)
+            logger.info("[Rank 0] MLflow Run successfully created (Run ID: %s)", run_id)
 
             mlflow.log_params(mlflow_cfg["params"])
             mlflow.set_tags(mlflow_cfg["tags"])
@@ -203,17 +203,17 @@ def _train_func_per_worker(config: dict) -> None:
             raw_model = model.module if hasattr(model, "module") else model
             components = {"model": raw_model, "tokenizer": tokenizer}
 
-            logger.info("[Rank 0] MLflow에 모델 등록 중 (Model Name: %s)...", mlflow_cfg["registered_model_name"])
+            logger.info("[Rank 0] Registering model to MLflow (Model Name: %s)...", mlflow_cfg["registered_model_name"])
             mlflow.transformers.log_model(
                 transformers_model=components,
                 task="text-generation",
                 name="model",
                 registered_model_name=mlflow_cfg["registered_model_name"],
             )
-            logger.info("[Rank 0] MLflow 모델 등록 완료")
+            logger.info("[Rank 0] MLflow model registration completed")
 
     except Exception as exc:
-        logger.error("[Rank 0] MLflow 저장 중 에러 발생: %s", str(exc), exc_info=True)
+        logger.error("[Rank 0] Error occurred during MLflow saving: %s", str(exc), exc_info=True)
         raise
 
     checkpoint_dir = os.path.join(output_dir, f"checkpoint_run_{run_id or 'unknown'}")
@@ -230,7 +230,7 @@ def _train_func_per_worker(config: dict) -> None:
         {"loss": last_loss, "epoch": epochs - 1, "mlflow_run_id": run_id},
         checkpoint=Checkpoint.from_directory(checkpoint_dir),
     )
-    logger.info("[Rank 0] 최종 결과 리포트 완료 및 워커 프로세스 정상 종료")
+    logger.info("[Rank 0] Final result report completed and worker process terminated normally")
 
 
 def _run_ray_training(
@@ -260,7 +260,7 @@ def _run_ray_training(
         },
     }
 
-    log.info("Ray 클러스터 연결: %s", ray_address)
+    log.info("Connecting to Ray Cluster: %s", ray_address)
     ray.init(address=ray_address, ignore_reinit_error=True, runtime_env=runtime_env)
 
     try:
@@ -277,13 +277,13 @@ def _run_ray_training(
             run_config=RunConfig(storage_path=storage_path),
         )
 
-        log.info("KubeRay 분산 학습 시작 (workers=%d, gpu=%s, epochs=%d)", num_workers, use_gpu, epochs)
+        log.info("Starting KubeRay distributed training (workers=%d, gpu=%s, epochs=%d)", num_workers, use_gpu, epochs)
         result = trainer.fit()
-        log.info("KubeRay 학습 완료")
+        log.info("KubeRay distributed training completed")
         return result.metrics or {}
     finally:
         ray.shutdown()
-        log.info("Ray 연결 종료")
+        log.info("Ray connection closed")
 
 
 def run() -> dict:
@@ -292,7 +292,7 @@ def run() -> dict:
         from mlflow import MlflowClient
 
         if not HF_TOKEN:
-            raise EnvironmentError("HF_TOKEN이 설정되어 있지 않습니다.")
+            raise EnvironmentError("HF_TOKEN environment variable is not set.")
 
         mlflow.set_tracking_uri(MLFLOW_TRACKING_URI)
         mlflow.set_experiment(MLFLOW_EXPERIMENT)
@@ -329,16 +329,16 @@ def run() -> dict:
 
         run_id = metrics.get("mlflow_run_id")
         if not run_id:
-            raise RuntimeError("Rank 0 워커로부터 mlflow_run_id를 받지 못했습니다. 워커 로그를 확인하세요.")
-        log.info("Rank 0 워커에서 run_id 수신: %s", run_id)
+            raise RuntimeError("Failed to receive mlflow_run_id from Rank 0 worker. Please check the worker logs.")
+        log.info("Received run_id from Rank 0 worker: %s", run_id)
 
         client = MlflowClient(tracking_uri=MLFLOW_TRACKING_URI)
         versions = client.get_latest_versions(MLFLOW_MODEL_NAME, stages=["None"])
         if not versions:
-            raise RuntimeError(f"MLflow Registry에서 '{MLFLOW_MODEL_NAME}' 모델을 찾을 수 없습니다.")
+            raise RuntimeError(f"Could not find model '{MLFLOW_MODEL_NAME}' in MLflow Registry.")
 
         model_version = next((v.version for v in versions if v.run_id == run_id), versions[0].version)
-        log.info("MLflow 모델 버전 확인: name=%s, version=%s", MLFLOW_MODEL_NAME, model_version)
+        log.info("Verified MLflow model version: name=%s, version=%s", MLFLOW_MODEL_NAME, model_version)
 
         return {
             "status": "success",
@@ -348,5 +348,5 @@ def run() -> dict:
             "metrics": metrics,
         }
     except Exception as exc:
-        log.error("Task 3 실패: %s", exc, exc_info=True)
+        log.error("Task 3 failed: %s", exc, exc_info=True)
         return {"status": "failed", "error": str(exc)}

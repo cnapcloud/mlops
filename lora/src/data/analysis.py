@@ -21,7 +21,7 @@ log = logging.getLogger("data.analysis")
 def run() -> dict:
     try:
         raw_texts = _load_raw_data()
-        log.info("원본 데이터 로드 완료: %d 건", len(raw_texts))
+        log.info("Raw data loaded successfully: %d records", len(raw_texts))
 
         analysis = _analyze(raw_texts)
         report_path = _save_report(analysis)
@@ -29,7 +29,7 @@ def run() -> dict:
 
         return {"status": "success", "report_path": report_path, "summary": analysis["summary"]}
     except Exception as exc:
-        log.error("Task 1 실패: %s", exc, exc_info=True)
+        log.error("Task 1 failed: %s", exc, exc_info=True)
         return {"status": "failed", "error": str(exc)}
 
 
@@ -93,18 +93,18 @@ def _save_report(analysis: dict) -> str:
     os.makedirs(ARTIFACT_DIR, exist_ok=True)
     with open(ANALYSIS_REPORT_PATH, "w", encoding="utf-8") as handle:
         json.dump(analysis, handle, ensure_ascii=False, indent=2)
-    log.info("분석 리포트 저장: %s", ANALYSIS_REPORT_PATH)
+    log.info("Analysis report saved to: %s", ANALYSIS_REPORT_PATH)
     return ANALYSIS_REPORT_PATH
 
 
 def _print_summary(analysis: dict) -> None:
     summary = analysis["summary"]
     log.info("─" * 40)
-    log.info("[ 데이터 분석 요약 ]")
-    log.info("  전체 건수       : %d", summary["total_count"])
-    log.info("  유효 건수       : %d", summary["valid_count"])
-    log.info("  Null 비율       : %.1f%%", summary["null_ratio"] * 100)
-    log.info("  중복 비율       : %.1f%%", summary["duplicate_ratio"] * 100)
-    log.info("  평균 단어 수    : %.1f", summary["avg_word_count"])
-    log.info("  추정 평균 토큰  : %.1f", summary["avg_tokens_estimated"])
+    log.info("[ Data Analysis Summary ]")
+    log.info("  Total Records         : %d", summary["total_count"])
+    log.info("  Valid Records         : %d", summary["valid_count"])
+    log.info("  Null Ratio            : %.1f%%", summary["null_ratio"] * 100)
+    log.info("  Duplicate Ratio       : %.1f%%", summary["duplicate_ratio"] * 100)
+    log.info("  Avg Word Count        : %.1f", summary["avg_word_count"])
+    log.info("  Estimated Avg Tokens  : %.1f", summary["avg_tokens_estimated"])
     log.info("─" * 40)
