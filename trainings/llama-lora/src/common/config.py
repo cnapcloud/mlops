@@ -86,7 +86,7 @@ USE_GPU = _get_bool("USE_GPU", False)
 # Resources per worker defaults — can be overridden in config.properties or env
 # `WORKER_CPUS` sets number of CPU cores to request per worker when not using GPU
 # `WORKER_GPUS` sets number of GPUs to request per worker when using GPU
-RAY_WORKER_CPUS = _get_int("RAY_WORKER_CPUS", 4)
+RAY_WORKER_CPUS = _get_int("RAY_WORKER_CPUS", 2)
 RAY_WORKER_GPUS = _get_int("RAY_WORKER_GPUS", 1)
 
 TRAIN_EPOCHS = _get_int("TRAIN_EPOCHS", 3)
