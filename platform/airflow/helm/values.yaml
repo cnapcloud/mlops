@@ -63,7 +63,7 @@ dags:
     enabled: true
     repo: "https://github.com/cnapcloud/mlops.git"
     branch: "main"
-    subPath: "airflow/dags"
+    subPath: "platform/airflow/dags"
     wait: 20
     credentialsSecret: ""
     sshKeySecret: ""

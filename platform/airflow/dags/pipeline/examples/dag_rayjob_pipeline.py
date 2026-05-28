@@ -2,8 +2,8 @@ import os
 
 from airflow.sdk import DAG, task
 from datetime import datetime
-from platform.airflow.dags.common.rayjob import RayJobSensor
-import platform.airflow.dags.manifests as manifests
+from airflow.dags.common.rayjob import RayJobSensor
+import airflow.dags.manifests as manifests
 
 MANIFEST_FILE_PATH = os.path.join(manifests.MANIFEST_ROOT, "example_job.yaml")
 
