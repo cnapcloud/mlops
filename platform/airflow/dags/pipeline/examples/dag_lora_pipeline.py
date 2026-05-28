@@ -7,7 +7,7 @@ from airflow.providers.standard.operators.python  import BranchPythonOperator
 from airflow.providers.standard.operators.empty import EmptyOperator
 
 # 템플릿 경로 설정
-import airflow.dags.manifests as manifests
+import manifests
 TEMPLATE_PATH =  os.path.join(manifests.MANIFEST_ROOT,'lora_pipeline_template.yaml')
 
 # Data Analysis 스크립트
