@@ -1,0 +1,99 @@
+
+MLOps Pipeline Scenario (현재 구조 기준)
+
+[1] 현재 패키지 구조
+
+- src/common/: 공통 설정, 로깅, MLflow 유틸
+- src/data/: 분석/검증 도메인 로직
+- src/training/: 학습/평가/승격 도메인 로직
+- src/wrappers/: Airflow/Kubernetes 전용 래퍼(XCom 기록)
+- src/cli/: 로컬 실행 엔트리(run_analysis, run_validation, run_train, run_eval, run_promote, run_pipeline)
+- airflow/dags/training_pipeline.py: KubernetesPodOperator 기반 DAG
+
+[2] Task 1. Data Analysis
+
+- 모듈: src/data/analysis.py
+- 동작:
+	- 100건 샘플 데이터 로드
+	- 텍스트 통계(Null 비율, 중복 비율, 평균/최대/최소 등) 계산
+	- 결과를 artifacts/analysis_report.json 저장
+- 반환: status, report_path, summary
+
+[3] Task 2. Data Validation
+
+- 모듈: src/data/validation.py
+- 입력: Task 1 결과 리포트(artifacts/analysis_report.json)
+- 검증 기준:
+	- null 비율 < 5%
+	- 중복 비율 < 10%
+	- 최소 샘플 수 충족
+	- 평균 추정 토큰 수 기준 충족
+- 분기:
+	- 통과 시 Task 3 진행
+	- 실패 시 파이프라인 중단
+
+[4] Task 3. Train (KubeRay + MLflow)
+
+- 모듈: src/training/train.py
+- 동작:
+	- Ray/KubeRay 기반 분산 학습 수행
+	- 학습 메트릭(loss, epoch) MLflow 로깅
+	- 모델명 llm-finetune 으로 Model Registry 버전 등록
+- 반환: status, run_id, model_version, model_name, metrics
+
+[5] Task 4. Evaluate & Staging 비교
+
+- 모듈: src/training/evaluate.py
+- 동작:
+	- 신규 모델 vs 현재 Staging 모델 성능 비교(Perplexity)
+	- 신규 모델 우수 시 신규 버전을 Staging 승격, 기존 Staging Archived
+	- 성능 미달 시 승격하지 않고 파이프라인 중단
+	- 최초 실행(비교 대상 없음) 시 신규 모델 Staging 승격
+- 반환: status, promoted, new_version, decision
+
+[6] Task 5. Smoke Test -> Production 승격
+
+- 모듈: src/training/promote.py
+- 동작:
+	- Staging 모델을 로드해 샘플 입력으로 추론 테스트
+	- 체크 항목: 응답 지연, 출력 토큰 수, 예외 발생 여부
+	- 전부 통과 시 Production 승격
+	- 실패 시 Production 유지
+- 반환: status, promoted, decision, test_results
+
+[7] Airflow + KubernetesPodOperator 실행 방식
+
+- DAG: airflow/dags/training_pipeline.py
+- 오퍼레이터: KubernetesPodOperator
+- 실행 순서: analysis -> validation -> train -> evaluate -> promote
+- 각 pod는 아래 래퍼 모듈 실행:
+	- wrappers.airflow_analysis
+	- wrappers.airflow_validation
+	- wrappers.airflow_train
+	- wrappers.airflow_eval
+	- wrappers.airflow_promote
+- 래퍼 역할:
+	- 도메인 함수 호출
+	- 최소 메타데이터만 /airflow/xcom/return.json 에 기록
+
+[8] 로컬 실행 방식
+
+- 개별 실행:
+	- python -m cli.run_analysis
+	- python -m cli.run_validation
+	- python -m cli.run_train
+	- python -m cli.run_eval
+	- python -m cli.run_promote
+- 전체 실행:
+	- python -m cli.run_pipeline
+
+[9] Makefile 기준 실행
+
+- 환경 생성: make venv
+- 패키지 설치: make install
+- 파이프라인 실행: make run-pipeline
+- 단일 스테이지 실행 예시: make run-pipeline PIPELINE_STAGE=train
+- 이미지 빌드/푸시:
+	- make build
+	- make push
+	- make build-push

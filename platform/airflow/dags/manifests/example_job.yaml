@@ -1,0 +1,40 @@
+
+apiVersion: ray.io/v1
+kind: RayJob
+metadata:
+  name: example-job-
+spec:
+  # 기존 RayCluster에 연결
+  clusterSelector:
+    ray.io/cluster: raycluster
+
+  # 제출할 Python 코드
+  entrypoint: |
+    python -c "
+    import ray, socket, time
+    ray.init(address='auto')
+
+    @ray.remote
+    def worker_task(i):
+        return f'Task {i} executed on {socket.gethostname()}'
+
+    results = ray.get([worker_task.remote(i) for i in range(5)])
+
+    print('=== RESULTS ===')
+    for result in results:
+        print(result)
+
+    raise Exception('Intentional exception at the end of the job')
+    "
+
+  # Job 완료 후 자동 정리 여부
+  shutdownAfterJobFinishes: true
+
+  # submitter pod 설정
+  submitterPodTemplate:
+    spec:
+      restartPolicy: Never
+      containers:
+        - name: ray-job-submitter
+          image: rayproject/ray:2.55.1-py312-cpu-aarch64
+          imagePullPolicy: Always

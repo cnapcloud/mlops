@@ -1,0 +1,119 @@
+apiVersion: ray.io/v1
+kind: RayJob
+metadata:
+  name: example-rayjob
+  namespace: default
+
+spec:
+  # 잡이 끝난 후 클러스터 자동 삭제
+  shutdownAfterJobFinishes: true
+
+  # 실패 시 재시도 횟수
+  backoffLimit: 1
+
+  # 실행할 엔트리포인트
+  entrypoint: python /home/ray/app/main.py
+
+  # 런타임 패키지 설치
+  runtimeEnvYAML: |
+    pip:
+      - pandas
+      - pyarrow
+
+  rayClusterSpec:
+    rayVersion: "2.55.1"
+
+    headGroupSpec:
+      serviceType: ClusterIP
+
+      rayStartParams:
+        dashboard-host: "0.0.0.0"
+
+      template:
+        spec:
+          containers:
+            - name: ray-head
+              image: rayproject/ray:2.55.1-py312-cpu-aarch64
+              imagePullPolicy: IfNotPresent
+
+              ports:
+                - containerPort: 6379
+                  name: gcs
+                - containerPort: 8265
+                  name: dashboard
+                - containerPort: 10001
+                  name: client
+
+              resources:
+                requests:
+                  cpu: "1"
+                  memory: "2Gi"
+                limits:
+                  cpu: "1"
+                  memory: "2Gi"
+
+              volumeMounts:
+                - name: app
+                  mountPath: /home/ray/app
+
+          volumes:
+            - name: app
+              configMap:
+                name: ray-job-code
+
+    workerGroupSpecs:
+      - groupName: workers
+
+        replicas: 1
+        minReplicas: 1
+        maxReplicas: 1
+
+        rayStartParams: {}
+
+        template:
+          spec:
+            containers:
+              - name: ray-worker
+                image: rayproject/ray:2.55.1-py312-cpu-aarch64
+                imagePullPolicy: IfNotPresent
+
+                resources:
+                  requests:
+                    cpu: "1"
+                    memory: "2Gi"
+                  limits:
+                    cpu: "1"
+                    memory: "2Gi"
+
+                volumeMounts:
+                  - name: app
+                    mountPath: /home/ray/app
+
+            volumes:
+              - name: app
+                configMap:
+                  name: ray-job-code
+---
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: ray-job-code
+  namespace: default
+
+data:
+  main.py: |
+    import ray
+    import time
+
+    ray.init()
+
+    @ray.remote
+    def work(x):
+        time.sleep(1)
+        return x * 2
+
+    futures = [work.remote(i) for i in range(10)]
+
+    results = ray.get(futures)
+
+    print("RESULT:", results)
