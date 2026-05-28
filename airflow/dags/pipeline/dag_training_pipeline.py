@@ -43,6 +43,7 @@ def _pod_task(task_id: str, module_name: str, arguments: list[str] | None = None
     )
     
     hf_homn_env = k8s.V1EnvVar(name="HF_HOME", value="/mnt/data/hf_home")
+    airflow_env = k8s.V1EnvVar(name="AIRFLOW", value=True)
     
     return KubernetesPodOperator(
         task_id=task_id,
@@ -54,6 +55,7 @@ def _pod_task(task_id: str, module_name: str, arguments: list[str] | None = None
         env_vars=[
             secret_env,
             hf_homn_env,
+            airflow_env
         ],
         get_logs=True,
         is_delete_operator_pod=True,

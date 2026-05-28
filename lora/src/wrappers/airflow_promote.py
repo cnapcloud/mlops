@@ -27,7 +27,7 @@ def _write_xcom(payload: dict) -> None:
     xcom_path.write_text(json.dumps(payload), encoding="utf-8")
 
 def main() -> None:
-    setup_logging("promote")
+    setup_logging("promotion")
     execute()
 
 if __name__ == "__main__":

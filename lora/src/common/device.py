@@ -3,7 +3,6 @@ import torch
 
 log = logging.getLogger(__name__)
 
-
 def get_device(prefer: str | None = None) -> torch.device:
     """
     prefer: "cpu" | "mps" | "cuda" | None
