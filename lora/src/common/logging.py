@@ -9,26 +9,24 @@ from datetime import datetime
 from common import config
 
 def setup_logging(name: str = "main") -> logging.Logger:
-    is_airflow = "AIRFLOW" in os.environ
+    # PodOperator에서 주입한 환경변수 확인
+    is_airflow = os.environ.get("AIRFLOW") == "True"
 
     if is_airflow:
-        # Airflow가 사용하는 루트 로거의 핸들러를 그대로 가져옵니다.
-        # 이렇게 하면 Airflow의 로깅 설정(포맷, 출력처)을 그대로 상속받습니다.
-        logger = logging.getLogger(name)
-        logger.setLevel(logging.INFO)
-        # 중요: 상위 Airflow 로거로 로그를 전파시킵니다.
-        logger.propagate = True 
-        return logger
+        log_format = "[%(levelname)s] %(name)s - %(message)s"
     else:
-        # 로컬 실행 시 기존 기본 설정 사용
-        logging.basicConfig(
-            level=logging.INFO,
-            format="%(asctime)s [%(levelname)s] %(name)s - %(message)s",
-            datefmt="%Y-%m-%d %H:%M:%S",
-            force=True,
-            handlers=[logging.StreamHandler(sys.stdout)],
-        )
-        return logging.getLogger(name)
+        log_format = "%(asctime)s [%(levelname)s] %(name)s - %(message)s"
+
+    # 무조건 StreamHandler(sys.stdout)를 통해 화면에 로그를 뱉어내야
+    # 쿠버네티스가 이를 가로채서 Airflow UI로 전달할 수 있습니다.
+    logging.basicConfig(
+        level=logging.INFO,
+        format=log_format,
+        datefmt="%Y-%m-%d %H:%M:%S",
+        force=True,
+        handlers=[logging.StreamHandler(sys.stdout)],
+    )
+    return logging.getLogger(name)
 
 
 def file_logging_path(prefix: str = "pipeline") -> str:
