@@ -18,4 +18,4 @@ roleRef:
 subjects:
   - kind: ServiceAccount
     name: airflow-worker
-    namespace: airflow
+    namespace: mlops

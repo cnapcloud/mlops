@@ -64,6 +64,7 @@ def _pod_task(task_id: str, module_name: str, arguments: list[str] | None = None
         volumes=[volume],
         volume_mounts=[volume_mount],
         logging_interval=3,
+        startup_timeout_seconds=600,
     )
 
 

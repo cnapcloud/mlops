@@ -118,6 +118,8 @@ with DAG(
 
         get_logs=True,
         is_delete_operator_pod=True,
+        logging_interval=3,
+        startup_timeout_seconds=600,
     )
 
     analyze >> validate >> train >> evaluate >> register
