@@ -1,7 +1,7 @@
 # MLOps Platform
 
 MLflow, Apache Airflow, KubeRay를 기반으로 구성한 MLOps 플랫폼입니다.
-데이터 수집 → 전처리 → 학습 → 모델 등록 → 서빙까지의 End-to-End 파이프라인을 제공하며,
+"데이터 분석 → 데이터 검증 → 학습 → 모델 평가 → 모델 등록"까지의 End-to-End 파이프라인을 제공하며,
 로컬 실행과 Airflow 기반 실행 두 가지 방식을 지원합니다.
 
 ---
