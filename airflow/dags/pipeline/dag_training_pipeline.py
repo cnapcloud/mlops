@@ -63,6 +63,7 @@ def _pod_task(task_id: str, module_name: str, arguments: list[str] | None = None
         image_pull_policy=os.getenv("MLOPS_PIPELINE_IMAGE_PULL_POLICY", "Always"),
         volumes=[volume],
         volume_mounts=[volume_mount],
+        logging_interval=3,
     )
 
 
