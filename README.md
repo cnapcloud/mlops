@@ -135,7 +135,7 @@ python step1_analyze.py    # 데이터 분석
 python step2_validate.py   # 데이터 검증
 python step3_train.py      # 모델 학습
 python step4_evaluate.py   # 모델 평가
-python step5_register.py   # MLflow 모델 등록
+python step5_register.py   # 모델 등록
 ```
 
 **Airflow 실행**
