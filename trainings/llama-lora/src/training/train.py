@@ -25,6 +25,7 @@ from common.config import (
     USE_GPU,
     RAY_WORKER_CPUS,
     RAY_WORKER_GPUS,
+    MLFLOW_HTTP_REQUEST_MAX_RETRIES,
 )
 from common.device import get_device
 from common.data import ensure_eos_suffix, load_validated_minio_data
@@ -204,12 +205,13 @@ def _train_func_per_worker(config: dict) -> None:
             components = {"model": raw_model, "tokenizer": tokenizer}
 
             logger.info("[Rank 0] Registering model to MLflow (Model Name: %s)...", mlflow_cfg["registered_model_name"])
-            mlflow.transformers.log_model(
+            model_info = mlflow.transformers.log_model(
                 transformers_model=components,
                 task="text-generation",
                 name="model",
                 registered_model_name=mlflow_cfg["registered_model_name"],
             )
+            model_version = model_info.registered_model_version
             logger.info("[Rank 0] MLflow model registration completed")
 
     except Exception as exc:
@@ -220,14 +222,14 @@ def _train_func_per_worker(config: dict) -> None:
     os.makedirs(checkpoint_dir, exist_ok=True)
     with open(os.path.join(checkpoint_dir, "metadata.json"), "w", encoding="utf-8") as handle:
         json.dump(
-            {"run_id": run_id, "loss": last_loss, "epoch": epochs - 1, "model_id": model_id},
+            {"run_id": run_id, "model_version": model_version, "loss": last_loss, "epoch": epochs - 1, "model_id": model_id},
             handle,
             ensure_ascii=False,
             indent=2,
         )
 
     rt.report(
-        {"loss": last_loss, "epoch": epochs - 1, "mlflow_run_id": run_id},
+        {"loss": last_loss, "epoch": epochs - 1, "mlflow_run_id": run_id, "mlflow_model_version": model_version},
         checkpoint=Checkpoint.from_directory(checkpoint_dir),
     )
     logger.info("[Rank 0] Final result report completed and worker process terminated normally")
@@ -257,6 +259,7 @@ def _run_ray_training(
             "HF_XET_HIGH_PERFORMANCE": "1",
             "RAY_ENABLE_RECORD_ACTOR_TASK_LOGGING": "1",
             "RAY_DEFAULT_OBJECT_STORE_MEMORY_PROPORTION": "0.5",
+            "MLFLOW_HTTP_REQUEST_MAX_RETRIES": str(MLFLOW_HTTP_REQUEST_MAX_RETRIES),
         },
     }
 
@@ -288,14 +291,8 @@ def _run_ray_training(
 
 def run() -> dict:
     try:
-        import mlflow
-        from mlflow import MlflowClient
-
         if not HF_TOKEN:
             raise EnvironmentError("HF_TOKEN environment variable is not set.")
-
-        mlflow.set_tracking_uri(MLFLOW_TRACKING_URI)
-        mlflow.set_experiment(MLFLOW_EXPERIMENT)
 
         mlflow_cfg = {
             "tracking_uri": MLFLOW_TRACKING_URI,
@@ -328,16 +325,11 @@ def run() -> dict:
         )
 
         run_id = metrics.get("mlflow_run_id")
+        model_version = metrics.get("mlflow_model_version")
         if not run_id:
             raise RuntimeError("Failed to receive mlflow_run_id from Rank 0 worker. Please check the worker logs.")
         log.info("Received run_id from Rank 0 worker: %s", run_id)
 
-        client = MlflowClient(tracking_uri=MLFLOW_TRACKING_URI)
-        versions = client.get_latest_versions(MLFLOW_MODEL_NAME, stages=["None"])
-        if not versions:
-            raise RuntimeError(f"Could not find model '{MLFLOW_MODEL_NAME}' in MLflow Registry.")
-
-        model_version = next((v.version for v in versions if v.run_id == run_id), versions[0].version)
         log.info("Verified MLflow model version: name=%s, version=%s", MLFLOW_MODEL_NAME, model_version)
 
         return {
@@ -349,4 +341,4 @@ def run() -> dict:
         }
     except Exception as exc:
         log.error("Task 3 failed: %s", exc, exc_info=True)
-        return {"status": "failed", "error": str(exc)}
+        raise

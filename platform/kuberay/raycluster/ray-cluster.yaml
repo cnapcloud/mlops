@@ -20,9 +20,9 @@ spec:
               - mlflow.cnapcloud.com
 
         volumes:
-          - name: ray-shared-storage
+          - name: ray-data-storage
             persistentVolumeClaim:
-              claimName: ray-shared-pvc
+              claimName: ray-data-pvc
 
         containers:
           - name: ray-head
@@ -38,8 +38,8 @@ spec:
                 memory: 4Gi
 
             volumeMounts:
-              - name: ray-shared-storage
-                mountPath: /shared
+              - name: ray-data-storage
+                mountPath: /mnt/data
 
             ports:
               - containerPort: 6379
@@ -90,9 +90,9 @@ spec:
                     topologyKey: kubernetes.io/hostname
 
           volumes:
-            - name: ray-shared-storage
+            - name: ray-data-storage
               persistentVolumeClaim:
-                claimName: ray-shared-pvc
+                claimName: ray-data-pvc
 
           containers:
             - name: ray-worker
@@ -108,8 +108,8 @@ spec:
                   memory: 10Gi
 
               volumeMounts:
-                - name: ray-shared-storage
-                  mountPath: /shared
+                - name: ray-data-storage
+                  mountPath: /mnt/data
 
               readinessProbe:
                 exec:

@@ -159,4 +159,5 @@ def run() -> dict:
         return {"status": "success", "promoted": all_passed, "test_results": test_results, "decision": decision}
     except Exception as exc:
         log.error("Task 5 failed: %s", exc, exc_info=True)
-        return {"status": "failed", "promoted": False, "error": str(exc)}
+        raise
+    

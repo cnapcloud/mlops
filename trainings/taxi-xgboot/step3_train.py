@@ -177,6 +177,7 @@ def train_and_log_distributed(
     ray_address: str,
     num_workers: int,
     mlflow_uri: str,
+    storage_path: str,
 ) -> tuple[str, dict]:
     """
     Returns: (run_id, metrics)
@@ -325,7 +326,7 @@ def train_and_log_distributed(
         train_loop_per_worker,
         datasets       = {"train": train_ds, "validation": val_ds},
         scaling_config = ScalingConfig(num_workers=num_workers, resources_per_worker={"CPU": 1}, use_gpu=False),
-        run_config=RunConfig(name=run_name, storage_path="/shared/ray-checkpoints")
+        run_config=RunConfig(name=run_name, storage_path=storage_path)
     )
 
     result = trainer.fit()
@@ -419,6 +420,7 @@ def main(args: argparse.Namespace) -> None:
                 ray_address           = args.ray_address,
                 num_workers           = args.num_workers,
                 mlflow_uri            = args.mlflow_uri,
+                storage_path          = args.storage_path,
             )
 
         # 다음 evaluate step에서 Staging 등록을 하면 여기서는 스킵해야함
@@ -463,5 +465,6 @@ if __name__ == "__main__":
     parser.add_argument("--num-workers",  type=int,  default=1,             help="Ray 워커 수")
     parser.add_argument("--n-estimators", type=int,  default=300,           help="XGBoost n_estimators")
     parser.add_argument("--mlflow-uri",   default="http://mlflow.cnapcloud.com", help="MLflow Tracking URI")
+    parser.add_argument("--storage-path", default="/mnt/data/xgb-checkpoints", help="Ray Train storage_path")
     args = parser.parse_args()
     main(args)

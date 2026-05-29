@@ -30,7 +30,7 @@ def run() -> dict:
         return {"status": "success", "report_path": report_path, "summary": analysis["summary"]}
     except Exception as exc:
         log.error("Task 1 failed: %s", exc, exc_info=True)
-        return {"status": "failed", "error": str(exc)}
+        raise
 
 
 def _load_raw_data() -> list[str | None]:

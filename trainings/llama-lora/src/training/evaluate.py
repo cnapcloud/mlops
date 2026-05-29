@@ -178,4 +178,4 @@ def run(train_result: dict | None = None) -> dict:
         return {"status": "success", "promoted": promoted, "new_version": new_version, "new_perplexity": new_perplexity, "prev_perplexity": prev_perplexity, "decision": decision}
     except Exception as exc:
         log.error("Task 4 failed: %s", exc, exc_info=True)
-        return {"status": "failed", "promoted": False, "error": str(exc)}
+        raise

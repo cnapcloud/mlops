@@ -23,7 +23,7 @@ def run() -> dict:
         }
     except Exception as exc:
         log.error("Task 0 failed: %s", exc, exc_info=True)
-        return {"status": "failed", "error": str(exc)}
+        raise
 
 
 def _build_seed_data() -> list[str | None]:
