@@ -7,6 +7,7 @@ from datetime import datetime
 
 from airflow import DAG
 from airflow.providers.cncf.kubernetes.operators.pod import KubernetesPodOperator
+from airflow.operators.python import ShortCircuitOperator
 from kubernetes.client import models as k8s
 
 
@@ -67,6 +68,12 @@ def _pod_task(task_id: str, module_name: str, arguments: list[str] | None = None
         startup_timeout_seconds=600,
     )
 
+def _check_promoted(**context):
+    result = context["ti"].xcom_pull(task_ids="evaluate")
+    if isinstance(result, str):
+        import json
+        result = json.loads(result)
+    return result.get("promoted") is True
 
 
 with DAG(
@@ -80,6 +87,10 @@ with DAG(
     analysis = _pod_task("analysis", "airflow_analysis")
     validation = _pod_task("validation", "airflow_validation")
     train = _pod_task("train", "airflow_train")
+    check_promote = ShortCircuitOperator(
+        task_id="check_promote",
+        python_callable=_check_promoted,
+    )
     evaluate = _pod_task(
         "evaluate",
         "airflow_eval",
@@ -87,4 +98,4 @@ with DAG(
     )
     promote = _pod_task("promote", "airflow_promote")
 
-    seed >> analysis >> validation >> train >> evaluate >> promote
+    seed >> analysis >> validation >> train >> evaluate >> check_promote >>  promote

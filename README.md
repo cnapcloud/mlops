@@ -84,7 +84,7 @@ Ray 클러스터와 공유 PVC를 생성합니다.
 
 ```bash
 cd platform/kuberay/raycluster
-kubectl create -f ray-shared-pvc.yaml
+kubectl create -f ray-data-pvc.yaml
 kubectl create -f ray-cluster.yaml
 ```
 
