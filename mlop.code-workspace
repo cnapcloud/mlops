@@ -17,6 +17,9 @@
 		},
 		{
 			"path": "trainings/taxi-xgboot"
+		},
+		{
+			"path": "platform/minio"
 		}
 	],
 	"settings": {}
