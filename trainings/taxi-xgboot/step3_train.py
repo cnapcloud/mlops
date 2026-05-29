@@ -28,7 +28,9 @@ Import 전략:
 """
 
 import argparse
+import json
 import logging
+import os
 import uuid
 from pathlib import Path
 
@@ -265,6 +267,9 @@ def train_and_log_distributed(
 
         # 여기서부터 Rank 0 워커의 MLflow 기록 영역입니다.
         logger.info(f"[Rank 0] MLflow 연동 시작 (Tracking URI: {mlflow_cfg['tracking_uri']})")
+        run_id = None
+        val_rmse = None
+        version = None
         
         try:
             cfg = mlflow_cfg
@@ -284,11 +289,12 @@ def train_and_log_distributed(
                 # 모델 등록 시작 지점
                 logger.info(f"[Rank 0] MLflow에 모델 등록 중 (Model Name: {cfg['registered_model_name']})... 대기 시간이 걸릴 수 있습니다.")
                 
-                _mlflow_xgb.log_model(
+                model_info = _mlflow_xgb.log_model(
                     booster,
                     name          = "model",
                     registered_model_name  = cfg["registered_model_name"],
                 )
+                version =  model_info.registered_model_version
                 logger.info(f"[Rank 0] MLflow에 모델 및 레지스트리 등록 최종 성공!")
 
         except Exception as e:
@@ -297,7 +303,20 @@ def train_and_log_distributed(
             raise e
 
         # run_id 를 드라이버로 전달
-        rt.report({"validation-rmse": val_rmse or 0.0})
+        output_dir = "/tmp/xgb_checkpoints"
+        checkpoint_dir = os.path.join(output_dir, f"checkpoint_run_{run_id or 'unknown'}")
+        os.makedirs(checkpoint_dir, exist_ok=True)
+        with open(os.path.join(checkpoint_dir, "metadata.json"), "w", encoding="utf-8") as handle:
+            json.dump(
+                {"run_id": run_id, "validation-rmse": val_rmse, "version": version},
+                handle,
+                ensure_ascii=False,
+                indent=2,
+            )
+
+        from ray.train import Checkpoint
+        rt.report({"run_id": run_id, "validation-rmse": val_rmse, "version": version},
+                  checkpoint=Checkpoint.from_directory(checkpoint_dir),)
         logger.info(f"[Rank 0] 🏁 최종 결과 리포트 완료 및 워커 종료")
 
     # ── Ray 초기화
@@ -331,15 +350,13 @@ def train_and_log_distributed(
 
     result = trainer.fit()
 
-    # ── 드라이버: 방금 생성된 최신 MLflow Model Version에서 run_id 수신
-    client = MlflowClient()
-    versions = client.search_model_versions(f"name='{registered_model_name}'")
-    if not versions:
-        raise RuntimeError(f"[{target_col}] MLflow model version 을 찾지 못했습니다: {registered_model_name}")
-    latest_version = max(versions, key=lambda v: int(v.version))
-    run_id = latest_version.run_id
-
     val_rmse = (result.metrics or {}).get("validation-rmse")
+    run_id = (result.metrics or {}).get("run_id")
+    if run_id is None:
+        raise RuntimeError(
+            f"[{target_col}] Distributed training did not report a run_id. "
+            f"Check Rank 0 MLflow logging. result.metrics={result.metrics}"
+        )
     metrics  = {"rmse": round(float(val_rmse), 4)} if val_rmse is not None else {}
 
     log.info("[%s] distributed run_id=%s", target_col, run_id)

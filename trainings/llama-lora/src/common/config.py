@@ -79,7 +79,7 @@ MODEL_ID = _get("MODEL_ID", "meta-llama/Llama-3.2-1B")
 MODEL_NAME = _get("MODEL_NAME", "llm-finetune")
 
 RAY_ADDRESS = _get("RAY_ADDRESS", "ray://raycluster-head-svc.default.svc:10001")
-RAY_STORAGE = _get("RAY_STORAGE_PATH", "/mnt/data/train-checkpoints")
+RAY_STORAGE = _get("RAY_STORAGE_PATH", "/mnt/data")
 RAY_NUM_WORKERS = _get_int("RAY_NUM_WORKERS", 1)
 USE_GPU = _get_bool("USE_GPU", False)
 

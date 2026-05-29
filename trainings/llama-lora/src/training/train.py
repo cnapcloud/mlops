@@ -73,6 +73,7 @@ def _train_func_per_worker(config: dict) -> None:
     epochs = config["epochs"]
     model_id = config["model_id"]
     mlflow_cfg = config["mlflow_cfg"]
+    storage_path = config["storage_path"]
 
     world_size = rt.get_context().get_world_size()
     world_rank = rt.get_context().get_world_rank()
@@ -146,7 +147,7 @@ def _train_func_per_worker(config: dict) -> None:
 
     data_collator = DataCollatorForSeq2Seq(tokenizer=tokenizer, padding=True, label_pad_token_id=-100)
 
-    output_dir = f"./lora_out/{model_id.replace('/', '_')}/train"
+    output_dir = f"{storage_path}/lora_out/{model_id.replace('/', '_')}/train"
     training_args = TrainingArguments(
         output_dir=output_dir,
         per_device_train_batch_size=mlflow_cfg["params"]["batch_size"],
@@ -273,7 +274,7 @@ def _run_ray_training(
 
         trainer = TorchTrainer(
             train_loop_per_worker=_train_func_per_worker,
-            train_loop_config={"epochs": epochs, "model_id": model_id, "mlflow_cfg": mlflow_cfg},
+            train_loop_config={"epochs": epochs, "model_id": model_id, "mlflow_cfg": mlflow_cfg, "storage_path": storage_path},
             scaling_config=scaling_config,
             torch_config=TorchConfig(backend="nccl" if use_gpu else "gloo"),
             datasets={"train_set": ray_dataset},
