@@ -1,22 +1,22 @@
 {
 	"folders": [
 		{
-			"path": "kuberay"
-		},
-		{
-			"path": "taxi"
-		},
-		{
-			"path": "mlflow"
-		},
-		{
-			"path": "airflow"
-		},
-		{
 			"path": "."
 		},
 		{
-			"path": "lora"
+			"path": "platform/kuberay"
+		},
+		{
+			"path": "platform/mlflow"
+		},
+		{
+			"path": "platform/airflow"
+		},
+		{
+			"path": "trainings/llama-lora"
+		},
+		{
+			"path": "trainings/taxi-xgboot"
 		}
 	],
 	"settings": {}

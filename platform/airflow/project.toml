@@ -3,5 +3,8 @@
 name = "airflow-dags"
 version = "0.1.0"
 
-[tool.pytest.ini_options]
-pythonpath = ["dags"]
+[tool.setuptools]
+package-dir = {"" = "dags"}
+
+[tool.setuptools.packages.find]
+where = ["dags"]
