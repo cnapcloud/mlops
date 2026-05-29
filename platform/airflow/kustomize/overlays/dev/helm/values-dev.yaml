@@ -1,0 +1,88 @@
+# Airflow API ingress
+ingress:
+  apiServer:
+    enabled: true
+    ingressClassName: nginx
+    hosts:
+      - name: airflow.cnapcloud.com
+        tls:
+          enabled: true
+          secretName: airflow-tls
+
+# Internal PostgreSQL subchart
+postgresql:
+  enabled: true
+  auth:
+    enablePostgresUser: true
+    postgresPassword: password
+    username: airflow
+    password: password
+    database: airflow
+  primary:
+    persistence:
+      enabled: true
+      storageClass: nfs
+      accessModes:
+        - ReadWriteOnce
+      size: 2Gi
+
+# Airflow metadata DB connection
+data:
+  metadataConnection:
+    protocol: postgresql
+    user: airflow
+    pass: password
+    db: airflow
+
+# Initial user bootstrap
+createUserJob:
+  enabled: true
+  defaultUser:
+    role: Admin
+    username: admin
+    email: admin@cnapcloud.com
+    firstName: admin
+    lastName: system
+    password: password
+  useHelmHooks: true
+  applyCustomEnv: true
+
+migrateDatabaseJob:
+  enabled: true
+  useHelmHooks: true
+  applyCustomEnv: true
+
+# DAG sync from git
+dags:
+  gitSync:
+    enabled: true
+    repo: https://github.com/cnapcloud/mlops.git
+    branch: main
+    subPath: platform/airflow/dags
+    wait: 20
+    credentialsSecret: ""
+    sshKeySecret: ""
+
+# Extra Python packages for the Airflow runtime
+env:
+  - name: _PIP_ADDITIONAL_DEPENDENCIES
+    value: kubernetes>=29.0.0 kubernetes-asyncio==29.0.0 apache-airflow-providers-cncf-kubernetes==10.17.0
+
+workers:
+  replicas: 1
+  persistence:
+    enabled: true
+    size: 2Gi
+
+triggerer:
+  env:
+    - name: PYTHONPATH
+      value: /opt/airflow/dags/repo/airflow/dags
+  replicas: 1
+  persistence:
+    enabled: true
+    size: 2Gi
+
+apiSecretKeySecretName: airflow-api-secret-key
+jwtSecretName: airflow-jwt-secret
+multiNamespaceMode: true
