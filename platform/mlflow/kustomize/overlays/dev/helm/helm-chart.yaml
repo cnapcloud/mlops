@@ -1,0 +1,11 @@
+apiVersion: builtin
+kind: HelmChartInflationGenerator
+metadata:
+  name: mlflow
+name: mlflow
+chartHome: ../../base/helm
+chart: mlflow
+releaseName: mlflow
+valuesFile: ./helm/values-dev.yaml
+includeCRDs: true
+namespace: mlops

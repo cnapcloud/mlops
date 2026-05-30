@@ -180,3 +180,4 @@ lora_out/
 **/lora_output
 **/artifacts/
 **/reports/
+platform/airflow/kustomize/base/resources/.generated/

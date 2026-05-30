@@ -63,7 +63,8 @@ spec:
       maxReplicas: 3
       groupName: worker-group
 
-      rayStartParams: {}
+      rayStartParams:
+        object-store-memory: "6442450944" # 혹은 "6g"
 
       template:
         metadata:

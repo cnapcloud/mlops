@@ -1,0 +1,20 @@
+apiVersion: kustomize.config.k8s.io/v1beta1
+kind: Kustomization
+
+namespace: mlops
+
+generators:
+  - ./helm/helm-chart.yaml
+
+resources:
+  - ../../base
+  
+secretGenerator:
+  - name: mlflow-minio-secret
+    literals:
+      - AWS_ACCESS_KEY_ID=mLuTMCv1SVSfycZgX4th
+      - AWS_SECRET_ACCESS_KEY=pMmJbYQO4o12gFy1rsTX9mzN9ELgQplOQ1nrwHLf
+    type: Opaque
+
+generatorOptions:
+  disableNameSuffixHash: true

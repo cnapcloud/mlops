@@ -1,29 +1,8 @@
 #!/bin/bash
+set -euo pipefail
 
-helm repo add community-charts https://community-charts.github.io/helm-charts
-helm repo update
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+PROJECT_DIR="$(cd "${SCRIPT_DIR}/.." && pwd)"
 
-
-# mlflow pvc 생성
-if ! kubectl get pvc postgresql-pvc -n mlops &> /dev/null; then
-  echo "mlflow-pvc not found. Creating it..."
-  kubectl create namespace mlops 2>/dev/null || true
-  # kubectl apply -f mlflow-pvc.yaml
-  kubectl apply -f postgresql-pvc.yaml
-else
-  echo "mlflow-storage-pvc already exists. Skipping creation."
-fi
-
-# mlflow minio secret 생성
-if ! kubectl get secret mlflow-minio-secret -n mlops &> /dev/null; then
-  echo "mlflow-minio-secret not found. Creating it..."
-  kubectl apply -f mlflow-minio-secret.yaml
-else
-  echo "mlflow-minio-secret already exists. Skipping creation."
-fi
-
-helm upgrade --install mlflow community-charts/mlflow \
-  --version 1.8.1 \
-  --namespace mlops \
-  --create-namespace \
-  -f values.yaml
+make -C "${PROJECT_DIR}" pull
+make -C "${PROJECT_DIR}" apply

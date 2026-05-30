@@ -88,10 +88,22 @@ kubectl create -f ray-data-pvc.yaml
 kubectl create -f ray-cluster.yaml
 ```
 
+GPU를 사용하는 경우, Dockerfile에서 베이스 이미지를 변경하고 빌드한 이미지를 사용하여 ray-cluster.yaml를 배포합니다.
+분산 학습을 데스트하여 Ray Cluster가 정상적으로 동작하는지 확인합니다.
+
+```bash
+cd platform/kuberay/train
+python3 -m venv .venv
+source .venv/bin/activate
+pip install -r requirements.txt
+
+python3 train_ray.py
+```
+
 ### Step 4. Airflow
 
 ```bash
-cd platform/airflow/helm && ./install.sh
+cd platform/airflow && make apply
 ```
 
 > DAG는 Git Sync 방식으로 배포됩니다. `platform/airflow/dags/` 경로의 파일이 자동으로 반영됩니다.

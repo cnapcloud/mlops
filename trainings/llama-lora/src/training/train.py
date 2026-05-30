@@ -2,31 +2,10 @@
 
 from __future__ import annotations
 
-import json
 import logging
 import os
 
-from common.config import (
-    HF_HOME,
-    HF_TOKEN,
-    LEARNING_RATE,
-    LORA_ALPHA,
-    LORA_R,
-    MAX_SEQ_LEN,
-    MLFLOW_EXPERIMENT,
-    MLFLOW_MODEL_NAME,
-    MLFLOW_TRACKING_URI,
-    MODEL_ID,
-    RAY_ADDRESS,
-    RAY_NUM_WORKERS,
-    RAY_STORAGE,
-    TRAIN_BATCH,
-    TRAIN_EPOCHS,
-    USE_GPU,
-    RAY_WORKER_CPUS,
-    RAY_WORKER_GPUS,
-    MLFLOW_HTTP_REQUEST_MAX_RETRIES,
-)
+from common import config
 from common.device import get_device
 from common.data import ensure_eos_suffix, load_validated_minio_data
 
@@ -52,6 +31,8 @@ def _train_func_per_worker(config: dict) -> None:
     """Training function executed on each KubeRay worker Pod."""
     import json
     import logging
+    import os
+    import tempfile  # 로컬 고속 임시 디렉토리 활용을 위해 추가
 
     import mlflow
     import mlflow.transformers
@@ -73,7 +54,6 @@ def _train_func_per_worker(config: dict) -> None:
     epochs = config["epochs"]
     model_id = config["model_id"]
     mlflow_cfg = config["mlflow_cfg"]
-    storage_path = config["storage_path"]
 
     world_size = rt.get_context().get_world_size()
     world_rank = rt.get_context().get_world_rank()
@@ -84,10 +64,11 @@ def _train_func_per_worker(config: dict) -> None:
     if tokenizer.pad_token is None:
         tokenizer.pad_token = tokenizer.bos_token
 
-    device = get_device()
-    torch_dtype = torch.bfloat16 if device == "mps" else torch.float32
+    # 디바이스 객체 할당 및 통일
+    device = torch.device("cuda" if torch.cuda.is_available() else "mps" if torch.backends.mps.is_available() else "cpu")
+    torch_dtype = torch.bfloat16 if device.type == "mps" else torch.float32
 
-    model = AutoModelForCausalLM.from_pretrained(model_id, torch_dtype=torch_dtype)
+    model = AutoModelForCausalLM.from_pretrained(model_id, dtype=torch_dtype)
     model.to(device)
 
     peft_config = LoraConfig(
@@ -147,93 +128,110 @@ def _train_func_per_worker(config: dict) -> None:
 
     data_collator = DataCollatorForSeq2Seq(tokenizer=tokenizer, padding=True, label_pad_token_id=-100)
 
-    output_dir = f"{storage_path}/lora_out/{model_id.replace('/', '_')}/train"
-    training_args = TrainingArguments(
-        output_dir=output_dir,
-        per_device_train_batch_size=mlflow_cfg["params"]["batch_size"],
-        per_device_eval_batch_size=mlflow_cfg["params"]["batch_size"],
-        num_train_epochs=epochs,
-        learning_rate=mlflow_cfg["params"]["learning_rate"],
-        logging_steps=1,
-        save_strategy="epoch",
-        eval_strategy="steps",
-        eval_steps=3,
-        bf16=False,
-        fp16=(device.type == "cuda"),
-        lr_scheduler_type="cosine",
-        warmup_ratio=0.1,
-        max_grad_norm=1.0,
-        dataloader_pin_memory=(device.type == "cuda"),
-        push_to_hub=False,
-        use_cpu=(device.type == "cpu"),
-        report_to="none",
-    )
-
-    trainer = Trainer(
-        model=model,
-        args=training_args,
-        train_dataset=train_ds,
-        eval_dataset=eval_ds,
-        data_collator=data_collator,
-        optimizers=(optimizer, None),
-    )
-
-    train_result = trainer.train()
-    last_loss = train_result.training_loss
-    logger.info("[Rank %d] Full training pipeline completed (Final loss: %.6f)", world_rank, last_loss)
-
+    # 공통 제어 변수 선언
     run_id = None
-    if world_rank != 0:
-        logger.info("[Rank %d] Skipping MLflow saving since this is not Rank 0.", world_rank)
-        rt.report({"loss": last_loss, "epoch": epochs - 1})
-        return
+    model_version = None
+    checkpoint_dir = None
 
-    logger.info("[Rank 0] Starting MLflow logging integration (Tracking URI: %s)", mlflow_cfg["tracking_uri"])
-
-    try:
-        mlflow.set_tracking_uri(mlflow_cfg["tracking_uri"])
-        mlflow.set_experiment(mlflow_cfg["experiment"])
-
-        with mlflow.start_run() as run:
-            run_id = run.info.run_id
-            logger.info("[Rank 0] MLflow Run successfully created (Run ID: %s)", run_id)
-
-            mlflow.log_params(mlflow_cfg["params"])
-            mlflow.set_tags(mlflow_cfg["tags"])
-            mlflow.log_metric("final_loss", last_loss)
-
-            raw_model = model.module if hasattr(model, "module") else model
-            components = {"model": raw_model, "tokenizer": tokenizer}
-
-            logger.info("[Rank 0] Registering model to MLflow (Model Name: %s)...", mlflow_cfg["registered_model_name"])
-            model_info = mlflow.transformers.log_model(
-                transformers_model=components,
-                task="text-generation",
-                name="model",
-                registered_model_name=mlflow_cfg["registered_model_name"],
-            )
-            model_version = model_info.registered_model_version
-            logger.info("[Rank 0] MLflow model registration completed")
-
-    except Exception as exc:
-        logger.error("[Rank 0] Error occurred during MLflow saving: %s", str(exc), exc_info=True)
-        raise
-
-    checkpoint_dir = os.path.join(output_dir, f"checkpoint_run_{run_id or 'unknown'}")
-    os.makedirs(checkpoint_dir, exist_ok=True)
-    with open(os.path.join(checkpoint_dir, "metadata.json"), "w", encoding="utf-8") as handle:
-        json.dump(
-            {"run_id": run_id, "model_version": model_version, "loss": last_loss, "epoch": epochs - 1, "model_id": model_id},
-            handle,
-            ensure_ascii=False,
-            indent=2,
+    # 🛠️ 개선: 각 Pod의 로컬 고속 임시 디렉토리를 사용하여 파일 충돌 및 용량 낭비 방지
+    with tempfile.TemporaryDirectory() as local_temp_dir:
+        training_args = TrainingArguments(
+            output_dir=local_temp_dir,  # 로컬 저장소 활용
+            per_device_train_batch_size=mlflow_cfg["params"]["batch_size"],
+            per_device_eval_batch_size=mlflow_cfg["params"]["batch_size"],
+            num_train_epochs=epochs,
+            learning_rate=mlflow_cfg["params"]["learning_rate"],
+            logging_steps=1,
+            save_strategy="no",        # 공유 볼륨 폭발 방지를 위해 HF의 매 에폭 저장은 끕니다.
+            eval_strategy="steps",
+            eval_steps=3,
+            bf16=False,
+            fp16=(device.type == "cuda"),
+            lr_scheduler_type="cosine",
+            warmup_ratio=0.1,
+            max_grad_norm=1.0,
+            dataloader_pin_memory=(device.type == "cuda"),
+            push_to_hub=False,
+            use_cpu=(device.type == "cpu"),
+            report_to="none",
         )
 
-    rt.report(
-        {"loss": last_loss, "epoch": epochs - 1, "mlflow_run_id": run_id, "mlflow_model_version": model_version},
-        checkpoint=Checkpoint.from_directory(checkpoint_dir),
-    )
-    logger.info("[Rank 0] Final result report completed and worker process terminated normally")
+        trainer = Trainer(
+            model=model,
+            args=training_args,
+            train_dataset=train_ds,
+            eval_dataset=eval_ds,
+            data_collator=data_collator,
+            optimizers=(optimizer, None),
+        )
+
+        train_result = trainer.train()
+        last_loss = train_result.training_loss
+        logger.info("[Rank %d] Full training pipeline completed (Final loss: %.6f)", world_rank, last_loss)
+
+        # 모든 워커가 흐름을 끝까지 유지하도록 Early Return 제거
+        if world_rank == 0:
+            logger.info("[Rank 0] Starting MLflow logging integration (Tracking URI: %s)", mlflow_cfg["tracking_uri"])
+            try:
+                mlflow.set_tracking_uri(mlflow_cfg["tracking_uri"])
+                mlflow.set_experiment(mlflow_cfg["experiment"])
+
+                with mlflow.start_run() as run:
+                    run_id = run.info.run_id
+                    logger.info("[Rank 0] MLflow Run successfully created (Run ID: %s)", run_id)
+
+                    mlflow.log_params(mlflow_cfg["params"])
+                    mlflow.set_tags(mlflow_cfg["tags"])
+                    mlflow.log_metric("final_loss", last_loss)
+
+                    raw_model = model.module if hasattr(model, "module") else model
+                    components = {"model": raw_model, "tokenizer": tokenizer}
+
+                    logger.info("[Rank 0] Registering model to MLflow (Model Name: %s)...", mlflow_cfg["registered_model_name"])
+                    model_info = mlflow.transformers.log_model(
+                        transformers_model=components,
+                        task="text-generation",
+                        name="model",
+                        registered_model_name=mlflow_cfg["registered_model_name"],
+                    )
+                    model_version = model_info.registered_model_version
+                    logger.info("[Rank 0] MLflow model registration completed")
+
+                # Rank 0만 공유 저장소에 최종 수집용 메타데이터 폴더 생성
+                storage_path = config["storage_path"]
+                checkpoint_dir = os.path.join(storage_path, f"checkpoint_run_{run_id or 'unknown'}")
+                os.makedirs(checkpoint_dir, exist_ok=True)
+                
+                # 필요 시 최종 완성된 모델 가중치도 여기에 함께 백업합니다.
+                trainer.save_model(checkpoint_dir)
+
+                with open(os.path.join(checkpoint_dir, "metadata.json"), "w", encoding="utf-8") as handle:
+                    json.dump(
+                        {"run_id": run_id, "model_version": model_version, "loss": last_loss, "epoch": epochs - 1, "model_id": model_id},
+                        handle, ensure_ascii=False, indent=2,
+                    )
+
+            except Exception as exc:
+                logger.error("[Rank 0] Error occurred during MLflow saving: %s", str(exc), exc_info=True)
+                raise
+        else:
+            logger.info("[Rank %d] Waiting for Rank 0 to complete MLflow and storage operations.", world_rank)
+
+        # 모든 워커가 다 함께 같은 라인에서 rt.report()를 호출해 동기화합니다.(모든 워커의 작업 동기화)
+        # Rank 0만 유효한 디렉토리 객체를 전달하고, 나머지 워커는 None을 보내 레이가 중복 저장을 방지하게 합니다.
+        ray_checkpoint = Checkpoint.from_directory(checkpoint_dir) if checkpoint_dir else None
+
+        rt.report(
+            {
+                "loss": last_loss, 
+                "epoch": epochs - 1, 
+                "mlflow_run_id": run_id, 
+                "mlflow_model_version": model_version
+            },
+            checkpoint=ray_checkpoint,
+        )
+        
+    logger.info("[Rank %d] Final result report completed and worker process terminated normally", world_rank)
 
 
 def _run_ray_training(
@@ -260,7 +258,7 @@ def _run_ray_training(
             "HF_XET_HIGH_PERFORMANCE": "1",
             "RAY_ENABLE_RECORD_ACTOR_TASK_LOGGING": "1",
             "RAY_DEFAULT_OBJECT_STORE_MEMORY_PROPORTION": "0.5",
-            "MLFLOW_HTTP_REQUEST_MAX_RETRIES": str(MLFLOW_HTTP_REQUEST_MAX_RETRIES),
+            "MLFLOW_HTTP_REQUEST_MAX_RETRIES": str(config.MLFLOW_HTTP_REQUEST_MAX_RETRIES),
         },
     }
 
@@ -269,7 +267,7 @@ def _run_ray_training(
 
     try:
         ray_dataset = _build_dataset(model_id=model_id, hf_token=hf_token)
-        resources_per_worker = {"GPU": RAY_WORKER_GPUS} if use_gpu else {"CPU": RAY_WORKER_CPUS}
+        resources_per_worker = {"GPU": config.RAY_WORKER_GPUS} if use_gpu else {"CPU": config.RAY_WORKER_CPUS}
         scaling_config = ScalingConfig(num_workers=num_workers, use_gpu=use_gpu, resources_per_worker=resources_per_worker)
 
         trainer = TorchTrainer(
@@ -292,36 +290,36 @@ def _run_ray_training(
 
 def run() -> dict:
     try:
-        if not HF_TOKEN:
+        if not config.HF_TOKEN:
             raise EnvironmentError("HF_TOKEN environment variable is not set.")
 
         mlflow_cfg = {
-            "tracking_uri": MLFLOW_TRACKING_URI,
-            "experiment": MLFLOW_EXPERIMENT,
-            "registered_model_name": MLFLOW_MODEL_NAME,
+            "tracking_uri": config.MLFLOW_TRACKING_URI,
+            "experiment": config.MLFLOW_EXPERIMENT,
+            "registered_model_name": config.MLFLOW_MODEL_NAME,
             "params": {
-                "model_id": MODEL_ID,
-                "epochs": TRAIN_EPOCHS,
-                "num_workers": RAY_NUM_WORKERS,
-                "use_gpu": USE_GPU,
-                "lora_r": LORA_R,
-                "lora_alpha": LORA_ALPHA,
-                "learning_rate": LEARNING_RATE,
-                "max_seq_len": MAX_SEQ_LEN,
-                "batch_size": TRAIN_BATCH,
+                "model_id": config.MODEL_ID,
+                "epochs": config.TRAIN_EPOCHS,
+                "num_workers": config.RAY_NUM_WORKERS,
+                "use_gpu": config.USE_GPU,
+                "lora_r": config.LORA_R,
+                "lora_alpha": config.LORA_ALPHA,
+                "learning_rate": config.LEARNING_RATE,
+                "max_seq_len": config.MAX_SEQ_LEN,
+                "batch_size": config.TRAIN_BATCH,
             },
             "tags": {"pipeline": "mlops-demo", "task": "llm-finetune", "framework": "transformers+peft"},
         }
 
         metrics = _run_ray_training(
-            hf_token=HF_TOKEN,
-            ray_address=RAY_ADDRESS,
-            storage_path=RAY_STORAGE,
-            num_workers=RAY_NUM_WORKERS,
-            use_gpu=USE_GPU,
-            epochs=TRAIN_EPOCHS,
-            model_id=MODEL_ID,
-            hf_home=HF_HOME,
+            hf_token=config.HF_TOKEN,
+            ray_address=config.RAY_ADDRESS,
+            storage_path=config.RAY_STORAGE,
+            num_workers=config.RAY_NUM_WORKERS,
+            use_gpu=config.USE_GPU,
+            epochs=config.TRAIN_EPOCHS,
+            model_id=config.MODEL_ID,
+            hf_home=config.HF_HOME,
             mlflow_cfg=mlflow_cfg,
         )
 
@@ -331,13 +329,13 @@ def run() -> dict:
             raise RuntimeError("Failed to receive mlflow_run_id from Rank 0 worker. Please check the worker logs.")
         log.info("Received run_id from Rank 0 worker: %s", run_id)
 
-        log.info("Verified MLflow model version: name=%s, version=%s", MLFLOW_MODEL_NAME, model_version)
+        log.info("Verified MLflow model version: name=%s, version=%s", config.MLFLOW_MODEL_NAME, model_version)
 
         return {
             "status": "success",
             "run_id": run_id,
             "model_version": model_version,
-            "model_name": MLFLOW_MODEL_NAME,
+            "model_name": config.MLFLOW_MODEL_NAME,
             "metrics": metrics,
         }
     except Exception as exc:

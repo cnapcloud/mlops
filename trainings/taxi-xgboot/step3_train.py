@@ -219,13 +219,17 @@ def train_and_log_distributed(
         import mlflow as _mlflow
         import mlflow.xgboost as _mlflow_xgb
         import logging
+        import os
+        import json
+        from ray.train import Checkpoint
 
         # 💡 로거 설정 (드라이버로 전송될 표준 로거)
         logger = logging.getLogger("ray.train")
         
-        # 워커의 랭크 확인 (몇 번 워커인지 식별용)
+        # 워커의 랭크 및 전체 크기 확인
         world_rank = rt.get_context().get_world_rank()
-        logger.info(f"[Rank {world_rank}] 워커 프로세스 학습 루프 시작")
+        world_size = rt.get_context().get_world_size()
+        logger.info(f"[Rank {world_rank}/{world_size}] 워커 프로세스 학습 루프 시작")
 
         # ── 데이터 수신
         logger.info(f"[Rank {world_rank}] 데이터셋 샤드 수신 중...")
@@ -244,8 +248,19 @@ def train_and_log_distributed(
         dtrain = xgb.DMatrix(train_features, label=train_labels)
         dval   = xgb.DMatrix(val_features,   label=val_labels)
 
+        # ── [수정 1] 자원 경합 방지 및 고속 분산 네트워크(Rabit) 활성화
+        # 각 워커가 물리 코어(1개)를 넘어서 스레드를 만들지 않도록 제한합니다.
+        xgb_core_params["nthread"] = 1 
+        
+        # Ray Train 분산 환경에서 제공하는 통신 주소와 포트를 XGBoost에 명시적으로 찔러넣어 
+        # 무겁고 느린 파이썬 콜백 없이 C++ 레이어에서 초고속 분산 연산이 돌도록 만듭니다.
+        xgb_core_params.update({
+                    "world_size": world_size,
+                    "rank": world_rank,
+                })
+        
         # ── 학습
-        logger.info(f"[Rank {world_rank}] 🏋️ XGBoost 학습 시작...")
+        logger.info(f"[Rank {world_rank}] 🏋️ XGBoost 분산 학습 시작...")
         evals_result: dict = {}
         booster = xgb.train(
             xgb_core_params,
@@ -254,70 +269,68 @@ def train_and_log_distributed(
             num_boost_round = num_boost_round,
             evals_result    = evals_result,
             verbose_eval    = 100,
+            # ★ 매 스텝마다 브레이크를 걸고 보고하는 무거운 콜백을 넣지 않음으로써 10초대의 최고 속도를 유지합니다.
         )
 
         val_rmse = evals_result.get("validation", {}).get("rmse", [None])[-1]
         logger.info(f"[Rank {world_rank}] XGBoost 학습 완료 (최종 Val RMSE: {val_rmse})")
 
-        # ── rank=0 워커만 MLflow 저장
-        if world_rank != 0:
-            logger.info(f"[Rank {world_rank}] 💤 Rank 0이 아니므로 MLflow 저장을 건너뛰고 결과를 리포트합니다.")
-            rt.report({"validation-rmse": val_rmse or 0.0})
-            return
-
-        # 여기서부터 Rank 0 워커의 MLflow 기록 영역입니다.
-        logger.info(f"[Rank 0] MLflow 연동 시작 (Tracking URI: {mlflow_cfg['tracking_uri']})")
+        # 공통 제어 변수 사전 선언
         run_id = None
-        val_rmse = None
         version = None
-        
-        try:
-            cfg = mlflow_cfg
-            _mlflow.set_tracking_uri(cfg["tracking_uri"])
-            _mlflow.set_experiment(cfg["experiment"])
+        checkpoint_dir = None
 
-            logger.info(f"[Rank 0] MLflow Run 시작 중 (Experiment: {cfg['experiment']})")
-            with _mlflow.start_run() as run:
-                run_id = run.info.run_id
-                logger.info(f"[Rank 0] MLflow Run 생성 완료 (Run ID: {run_id})")
-                
-                # 파라미터 및 태그 기록 로그
-                _mlflow.log_params(cfg["params"])
-                _mlflow.set_tags(cfg["tags"])
-                logger.info(f"[Rank 0] 파라미터 및 태그 기록 완료")
-                
-                # 모델 등록 시작 지점
-                logger.info(f"[Rank 0] MLflow에 모델 등록 중 (Model Name: {cfg['registered_model_name']})... 대기 시간이 걸릴 수 있습니다.")
-                
-                model_info = _mlflow_xgb.log_model(
-                    booster,
-                    name          = "model",
-                    registered_model_name  = cfg["registered_model_name"],
-                )
-                version =  model_info.registered_model_version
-                logger.info(f"[Rank 0] MLflow에 모델 및 레지스트리 등록 최종 성공!")
+        # ── [수정 2] 조기 종료 분기 제거 (`if world_rank != 0: return` 제거)
+        # 다른 워커가 먼저 죽으면 Rank 0이 MLflow 로깅 도중 먹통(락)이 되므로,
+        # 오직 MLflow 기록 블록만 조건문으로 격리합니다.
+        if world_rank == 0:
+            logger.info(f"[Rank 0] MLflow 연동 시작 (Tracking URI: {mlflow_cfg['tracking_uri']})")
+            try:
+                cfg = mlflow_cfg
+                _mlflow.set_tracking_uri(cfg["tracking_uri"])
+                _mlflow.set_experiment(cfg["experiment"])
 
-        except Exception as e:
-            # 🚨 MLflow 저장 중 에러가 발생하면 드라이버에 트레이스백을 찍도록 예외 처리
-            logger.error(f"[Rank 0] MLflow 저장 중 에러 발생: {str(e)}", exc_info=True)
-            raise e
+                logger.info(f"[Rank 0] MLflow Run 시작 중 (Experiment: {cfg['experiment']})")
+                with _mlflow.start_run() as run:
+                    run_id = run.info.run_id
+                    logger.info(f"[Rank 0] MLflow Run 생성 완료 (Run ID: {run_id})")
+                    
+                    _mlflow.log_params(cfg["params"])
+                    _mlflow.set_tags(cfg["tags"])
+                    logger.info(f"[Rank 0] 파라미터 및 태그 기록 완료")
+                    
+                    logger.info(f"[Rank 0] MLflow에 모델 등록 중...")
+                    model_info = _mlflow_xgb.log_model(
+                        booster,
+                        name                  = "model",
+                        registered_model_name = cfg["registered_model_name"],
+                    )
+                    version = model_info.registered_model_version
+                    logger.info(f"[Rank 0] MLflow 등록 최종 성공!")
+                    # 체크포인트 디렉터리에 rank 값을 부여하여 상호 충돌 방지
+                    
+                    output_dir = "/tmp/xgb_checkpoints"
+                    checkpoint_dir = os.path.join(output_dir, f"checkpoint_run_rank_{world_rank}_{run_id or 'unknown'}")
+                    os.makedirs(checkpoint_dir, exist_ok=True)
+                    with open(os.path.join(checkpoint_dir, "metadata.json"), "w", encoding="utf-8") as handle:
+                        json.dump(
+                            {"run_id": run_id, "validation-rmse": val_rmse, "version": version},
+                            handle,
+                            ensure_ascii=False,
+                            indent=2,
+                        )
+            except Exception as e:
+                logger.error(f"[Rank 0] MLflow 저장 중 에러 발생: {str(e)}", exc_info=True)
+                raise e
 
-        # run_id 를 드라이버로 전달
-        output_dir = "/tmp/xgb_checkpoints"
-        checkpoint_dir = os.path.join(output_dir, f"checkpoint_run_{run_id or 'unknown'}")
-        os.makedirs(checkpoint_dir, exist_ok=True)
-        with open(os.path.join(checkpoint_dir, "metadata.json"), "w", encoding="utf-8") as handle:
-            json.dump(
-                {"run_id": run_id, "validation-rmse": val_rmse, "version": version},
-                handle,
-                ensure_ascii=False,
-                indent=2,
-            )
+        # ── ★★★ [핵심] 모든 워커가 '학습 종료 후 맨 마지막에 단 한 번' 동시에 리포트
+        # 이렇게 정렬하면 중간에 멈추는 일 없이 깔끔하고 고속으로 세션이 종료됩니다.
+        rt.report(
+            {"run_id": run_id, "validation-rmse": val_rmse, "version": version},
+            checkpoint=Checkpoint.from_directory(checkpoint_dir) if checkpoint_dir else None,
+        )
+        logger.info(f"[Rank {world_rank}] 🏁 최종 결과 리포트 완료 및 워커 종료")
 
-        from ray.train import Checkpoint
-        rt.report({"run_id": run_id, "validation-rmse": val_rmse, "version": version},
-                  checkpoint=Checkpoint.from_directory(checkpoint_dir),)
-        logger.info(f"[Rank 0] 🏁 최종 결과 리포트 완료 및 워커 종료")
 
     # ── Ray 초기화
     ray.init(
