@@ -1,0 +1,20 @@
+apiVersion: kustomize.config.k8s.io/v1beta1
+kind: Kustomization
+
+namespace: mlops
+
+resources:
+  - ../../base
+
+patches:
+  - path: patches/ray-cluster-patch.yaml
+    target:
+      group: ray.io
+      version: v1
+      kind: RayCluster
+      name: raycluster
+  - path: patches/ray-data-pvc-patch.yaml
+    target:
+      version: v1
+      kind: PersistentVolumeClaim
+      name: ray-data-pvc

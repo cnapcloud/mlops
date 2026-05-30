@@ -9,7 +9,7 @@ namespace: ## Create Kubernetes namespace 'mlops'
 	$(KUBECTL) create namespace mlops || true
 
 pull: ## Pull helm chart
-	rm -rf kustomize/base/helm/mlflow
+	rm -rf kustomize/base/helm
 	helm repo add kuberay https://ray-project.github.io/kuberay-helm/
 	helm repo update
 	helm pull kuberay/kuberay-operator  \

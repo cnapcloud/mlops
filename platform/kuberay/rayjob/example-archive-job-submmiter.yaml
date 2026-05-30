@@ -6,7 +6,7 @@ spec:
   clusterSelector:
     ray.io/cluster: raycluster
   entrypoint: >
-    bash -c "cd taxi && python step3_train.py"
+    bash -c "cd taxi-xgboost && python step3_train.py"
   runtimeEnvYAML: |
     working_dir: "https://github.com/cnapcloud/mlops/archive/refs/heads/main.zip"
     pip:

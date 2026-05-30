@@ -1,0 +1,18 @@
+- op: add
+  path: /spec/workerGroupSpecs/0/template/spec/hostAliases
+  value:
+    - ip: 192.168.0.180
+      hostnames:
+        - mlflow.cnapcloud.com
+- op: replace
+  path: /spec/workerGroupSpecs/0/rayStartParams/object-store-memory
+  value: "6442450944"
+- op: replace
+  path: /spec/workerGroupSpecs/0/template/spec/containers/0/resources
+  value:
+    requests:
+      cpu: "4"
+      memory: 12Gi
+    limits:
+      cpu: "4"
+      memory: 12Gi

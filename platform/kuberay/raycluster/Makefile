@@ -1,20 +1,29 @@
-IMAGE_ORG := cnapcloud
-IMAGE_REPOSITORY := ${IMAGE_ORG}/ray-llm
-IMAGE_TAG := 2.55.1-py312-cpu-aarch64
+.PHONY: pull preview diff apply delete namespace help
 
-.PHONY: docker-build docker-push docker-run-interactive prune
+export DEPLOY_ENV ?= dev
+KUBECTL := kubectl
+KUSTOMIZE ?= kustomize
+GITOPS_OVERLAYS := kustomize/overlays/$(DEPLOY_ENV)
 
-docker-build:
-	docker build -t $(IMAGE_REPOSITORY):$(IMAGE_TAG) .
-	$(MAKE) prune
+namespace: ## Create Kubernetes namespace 'mlops'
+	$(KUBECTL) create namespace mlops || true
 
-docker-push:
-	docker push $(IMAGE_REPOSITORY):$(IMAGE_TAG)
+delete: ## Delete workload
+	-$(KUSTOMIZE) build --enable-alpha-plugins $(GITOPS_OVERLAYS) | $(KUBECTL) delete -f -
 
-docker-run-interactive:
-	docker run --rm -it \
-		--add-host mlflow.cnapcloud.com:192.168.0.180 \
-		$(IMAGE_REPOSITORY):$(IMAGE_TAG) /bin/bash
+apply: namespace ## Deploy workload
+	$(KUSTOMIZE) build --enable-alpha-plugins $(GITOPS_OVERLAYS) | $(KUBECTL) apply --force-conflicts --server-side=true -f -
 
-prune:
-	yes| docker builder prune
+preview: ## Preview generated manifests
+	$(KUSTOMIZE) build --enable-alpha-plugins $(GITOPS_OVERLAYS)
+
+diff: ## Show workload diff
+	$(KUSTOMIZE) build --enable-alpha-plugins $(GITOPS_OVERLAYS) | $(KUBECTL) diff -f - || true
+
+help: ## Show available targets and descriptions
+	@echo "Usage: make <target>"
+	@echo ""
+	@echo "Targets:"
+	@grep -E '^[a-zA-Z0-9_-]+:.*?## .*$$' $(MAKEFILE_LIST) \
+		| sort \
+		| awk -F ':.*?## ' '{printf "  %-20s %s\n", $$1, $$2}'
