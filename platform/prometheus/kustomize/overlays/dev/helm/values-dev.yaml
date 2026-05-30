@@ -1,0 +1,101 @@
+# kube-prometheus-stack values.yaml
+# - 데이터 보관주기: 3일
+# - PVC: 2Gi
+# - Ingress: grafana.cnapcloud.com / prometheus.cnapcloud.com
+
+# ============================================================
+# Grafana
+# ============================================================
+grafana:
+  enabled: true
+
+  adminPassword: "password"
+
+  ingress:
+    enabled: true
+    ingressClassName: nginx
+    annotations:
+      nginx.ingress.kubernetes.io/rewrite-target: /
+    hosts:
+      - grafana.cnapcloud.com
+    paths:
+      - /
+    pathType: Prefix
+    # TLS 사용 시 아래 주석 해제
+    # tls:
+    #   - secretName: grafana-cnapcloud-tls
+    #     hosts:
+    #       - grafana.cnapcloud.com
+
+  persistence:
+    enabled: true
+    accessModes:
+      - ReadWriteOnce
+    size: 2Gi
+    # storageClassName: ""  # 클러스터 기본 StorageClass 사용
+
+# ============================================================
+# Prometheus
+# ============================================================
+prometheus:
+  enabled: true
+
+  ingress:
+    enabled: true
+    ingressClassName: nginx
+    annotations:
+      nginx.ingress.kubernetes.io/rewrite-target: /
+    hosts:
+      - prometheus.cnapcloud.com
+    paths:
+      - /
+    pathType: Prefix
+    # TLS 사용 시 아래 주석 해제
+    # tls:
+    #   - secretName: prometheus-cnapcloud-tls
+    #     hosts:
+    #       - prometheus.cnapcloud.com
+
+  prometheusSpec:
+    # 데이터 보관주기 3일
+    retention: 3d
+    maximumStartupDurationSeconds: 60
+
+    # PVC 2Gi
+    storageSpec:
+      volumeClaimTemplate:
+        spec:
+          accessModes:
+            - ReadWriteOnce
+          resources:
+            requests:
+              storage: 2Gi
+          # storageClassName: ""  # 클러스터 기본 StorageClass 사용
+
+# ============================================================
+# Alertmanager
+# ============================================================
+alertmanager:
+  enabled: true
+
+  alertmanagerSpec:
+    storage:
+      volumeClaimTemplate:
+        spec:
+          accessModes:
+            - ReadWriteOnce
+          resources:
+            requests:
+              storage: 2Gi
+
+# ============================================================
+# 기타 경량화 설정
+# ============================================================
+kubeStateMetrics:
+  enabled: true
+
+nodeExporter:
+  enabled: true
+
+prometheusOperator:
+  enabled: true

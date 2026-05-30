@@ -1,0 +1,11 @@
+apiVersion: builtin
+kind: HelmChartInflationGenerator
+metadata:
+  name: kube-prometheus-stack
+name: kube-prometheus-stack
+chartHome: ../../base/helm
+chart: kube-prometheus-stack
+releaseName: kube-prometheus-stack
+valuesFile: ./helm/values-dev.yaml
+includeCRDs: true
+namespace: mlops
