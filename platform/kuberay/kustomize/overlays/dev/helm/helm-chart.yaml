@@ -1,0 +1,11 @@
+apiVersion: builtin
+kind: HelmChartInflationGenerator
+metadata:
+  name: kuberay-operator
+name: kuberay-operator
+chartHome: ../../base/helm
+chart: kuberay-operator
+releaseName: kuberay-operator
+valuesFile: ./helm/values-dev.yaml
+includeCRDs: true
+namespace: mlops

@@ -71,13 +71,13 @@ cd platform/minio && make apply
 ### Step 2. MLflow
 
 ```bash
-cd platform/mlflow/helm && ./install.sh
+cd platform/mlflow/ && make apply
 ```
 
 ### Step 3. KubeRay
 
 ```bash
-cd platform/kuberay/helm && ./install.sh
+cd platform/kuberay && make apply   
 ```
 
 Ray 클러스터와 공유 PVC를 생성합니다.
