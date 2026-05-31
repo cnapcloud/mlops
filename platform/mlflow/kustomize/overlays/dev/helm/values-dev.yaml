@@ -147,3 +147,9 @@ readinessProbe:
   periodSeconds: 30
   timeoutSeconds: 3
   failureThreshold: 5
+
+serviceMonitor:
+  enabled: true
+  useServicePort: true
+  labels:
+    release: prometheus

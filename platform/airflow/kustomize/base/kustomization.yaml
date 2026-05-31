@@ -3,6 +3,15 @@ kind: Kustomization
 
 resources:
   - resources/airflow-rayjob-rbac.yaml
+  - resources/servicemonitor.yaml
+
+configMapGenerator:
+  - name: grafana-dashboards-airflow
+    files:
+      - grafana-dashboards/airflow-dashboard.json
+    options:
+      labels:
+        grafana_dashboard: "1"
 
 secretGenerator:
   - name: airflow-api-secret-key

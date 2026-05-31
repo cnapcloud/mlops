@@ -16,6 +16,7 @@ pull: ## Pull helm chart
 		--version 1.8.1 \
 		--untar \
 		--destination kustomize/base/helm
+	sed -i '' 's/{{- if and ( .Capabilities.APIVersions.Has "monitoring.coreos.com\/v1" ) ( .Values.serviceMonitor.enabled ) }}/{{- if .Values.serviceMonitor.enabled }}/g' kustomize/base/helm/mlflow/templates/servicemonitor.yaml
 
 delete: ## Delete workload
 	-$(KUSTOMIZE) build --enable-alpha-plugins $(GITOPS_OVERLAYS) | $(KUBECTL) delete -f -
