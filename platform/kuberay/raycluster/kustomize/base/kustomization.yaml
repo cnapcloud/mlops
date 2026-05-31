@@ -3,4 +3,16 @@ kind: Kustomization
 
 resources:
   - ./resources/ray-cluster.yaml
-  - ./resources/ray-data-pvc.yaml # rwx pvc for data sharing 
+  - ./resources/ray-data-pvc.yaml # rwx pvc for data sharing
+  - ./resources/podmonitor.yaml
+
+configMapGenerator:
+  - name: grafana-dashboards-ray
+    files:
+      - grafana-dashboards/raydefaultdashboard.json
+      - grafana-dashboards/raydatadashboard.json
+
+generatorOptions:
+  disableNameSuffixHash: true
+  labels:
+    grafana_dashboard: "1"

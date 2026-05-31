@@ -1,11 +1,11 @@
 apiVersion: builtin
 kind: HelmChartInflationGenerator
 metadata:
-  name: kube-prometheus-stack
-name: kube-prometheus-stack
+  name: grafana
+name: grafana
 chartHome: ../../base/helm
-chart: kube-prometheus-stack
-releaseName: prometheus
+chart: grafana
+releaseName: grafana
 valuesFile: ./helm/values-dev.yaml
 includeCRDs: true
 namespace: mlops

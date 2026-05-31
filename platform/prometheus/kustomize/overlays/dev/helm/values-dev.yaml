@@ -7,7 +7,17 @@
 # Grafana
 # ============================================================
 grafana:
-  enabled: true
+  enabled: false
+  
+  grafana.ini:
+    security:
+      allow_embedding: true
+    auth.anonymous:
+      enabled: true
+      org_role: Viewer
+    feature_toggles:
+      kubernetesDashboards: false
+      kubernetesDashboardsAPI: false
 
   adminPassword: "password"
 
@@ -56,7 +66,7 @@ prometheus:
     #     hosts:
     #       - prometheus.cnapcloud.com
 
-  prometheusSpec:
+  prometheusSpec:  
     # 데이터 보관주기 3일
     retention: 3d
     maximumStartupDurationSeconds: 60

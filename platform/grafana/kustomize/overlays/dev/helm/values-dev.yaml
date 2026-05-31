@@ -1,0 +1,93 @@
+# grafana-values.yaml
+grafana.ini:
+  security:
+    allow_embedding: true
+  auth.anonymous:
+    enabled: true
+    org_role: Viewer
+  feature_toggles:
+    kubernetesDashboards: false
+    kubernetesDashboardsAPI: false
+
+adminPassword: "password"
+
+persistence:
+  enabled: true
+  size: 2Gi
+
+datasources:
+  datasources.yaml:
+    apiVersion: 1
+    datasources:
+      - name: Prometheus
+        type: prometheus
+        url: http://prometheus-kube-prometheus-prometheus:9090
+        isDefault: true
+
+dashboardProviders:
+  dashboardproviders.yaml:
+    apiVersion: 1
+    providers:
+      - name: default
+        orgId: 1
+        folder: ""
+        type: file
+        disableDeletion: false
+        editable: true
+        options:
+          path: /var/lib/grafana/dashboards/default
+      - name: kubernetes
+        orgId: 1
+        folder: "Kubernetes"
+        type: file
+        disableDeletion: false
+        editable: true
+        options:
+          path: /var/lib/grafana/dashboards/kubernetes
+
+sidecar:
+  dashboards:
+    enabled: true
+    searchNamespace: ALL
+    label: grafana_dashboard
+    labelValue: "1"
+  datasources:
+    enabled: true
+    searchNamespace: ALL
+    label: grafana_datasource
+    labelValue: "1"
+
+dashboards:
+  kubernetes:
+    k8s-views-global:
+      gnetId: 15757      # Global View (클러스터 전체 overview)
+      revision: 37
+      datasource: Prometheus
+    k8s-views-nodes:
+      gnetId: 15759      # Nodes View (기존 11074 대체)
+      revision: 37
+      datasource: Prometheus
+    k8s-views-namespaces:
+      gnetId: 15758      # Namespace View
+      revision: 37
+      datasource: Prometheus
+    k8s-views-pods:
+      gnetId: 15760      # Pods View
+      revision: 37
+      datasource: Prometheus
+    k8s-system-api-server:
+      gnetId: 15761      # API Server
+      revision: 17
+      datasource: Prometheus
+    k8s-system-coredns:
+      gnetId: 15762      # CoreDNS
+      revision: 18
+      datasource: Prometheus
+
+ingress:
+  enabled: true
+  ingressClassName: nginx
+  hosts:
+    - grafana.cnapcloud.com
+  paths:
+    - /

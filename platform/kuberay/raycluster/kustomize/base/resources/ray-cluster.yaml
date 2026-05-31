@@ -5,6 +5,27 @@ metadata:
 spec:
   rayVersion: "2.55.1"
 
+  enableInTreeAutoscaling: true
+
+  autoscalerOptions:
+    upscalingMode: Default
+    # `idleTimeoutSeconds` is the number of seconds to wait before scaling down a worker pod which is not using Ray resources.
+    idleTimeoutSeconds: 60
+    imagePullPolicy: IfNotPresent
+    securityContext: {}
+    env:
+      - name: AUTOSCALER_UPDATE_INTERVAL_S
+        value: "5"
+      - name: RAY_LOGGER_LEVEL
+        value: "info"
+    resources:
+      limits:
+        cpu: "500m"
+        memory: "512Mi"
+      requests:
+        cpu: "500m"
+        memory: "512Mi"
+
   headGroupSpec:
     serviceType: LoadBalancer
 
@@ -37,6 +58,14 @@ spec:
                 cpu: "2"
                 memory: 4Gi
 
+            env:
+              - name: RAY_GRAFANA_IFRAME_HOST
+                value: http://grafana.cnapcloud.com
+              - name: RAY_GRAFANA_HOST
+                value: http://grafana.mlops.svc:80
+              - name: RAY_PROMETHEUS_HOST
+                value: http://prometheus-kube-prometheus-prometheus.mlops.svc:9090
+
             volumeMounts:
               - name: ray-data-storage
                 mountPath: /mnt/data
@@ -44,27 +73,29 @@ spec:
             ports:
               - containerPort: 6379
                 name: gcs
-
               - containerPort: 8265
                 name: dashboard
-
               - containerPort: 10001
                 name: client
-
               - containerPort: 8000
                 name: serve
-
               - containerPort: 8080
                 name: metrics
+              - containerPort: 44217
+                name: as-metrics
+                protocol: TCP
+              - containerPort: 44227
+                name: dash-metrics
+                protocol: TCP                
 
   workerGroupSpecs:
-    - replicas: 1
-      minReplicas: 1
-      maxReplicas: 3
+    - replicas: 0
+      minReplicas: 0
+      maxReplicas: 2
       groupName: worker-group
 
       rayStartParams:
-        object-store-memory: "6442450944" # 혹은 "6g"
+        object-store-memory: "5g"
 
       template:
         metadata:
