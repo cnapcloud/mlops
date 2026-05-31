@@ -59,6 +59,8 @@ spec:
                 memory: 4Gi
 
             env:
+              - name: TZ
+                value: Asia/Seoul            
               - name: RAY_GRAFANA_IFRAME_HOST
                 value: http://grafana.cnapcloud.com
               - name: RAY_GRAFANA_HOST
@@ -130,6 +132,9 @@ spec:
             - name: ray-worker
               image: cnapcloud/ray-llm:2.55.1-py312-cpu-aarch64
               imagePullPolicy: Always
+              env:
+                - name: TZ
+                  value: Asia/Seoul   
 
               resources:
                 requests:
